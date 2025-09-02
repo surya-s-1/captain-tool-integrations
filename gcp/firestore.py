@@ -13,6 +13,11 @@ class FirestoreDB:
 
     def __init__(self):
         self.db = firestore.Client(project=GOOGLE_CLOUD_PROJECT, database=FIRESTORE_DATABASE)
+    
+    def get_connection_status(self, tool_name, uid):
+        doc_ref = self.db.collection('secrets', 'tools', tool_name).document(uid)
+        doc = doc_ref.get()
+        return doc.exists
 
     def save_auth_state(self, tool_name, uid, state):
         '''

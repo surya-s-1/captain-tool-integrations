@@ -20,6 +20,19 @@ jira_client = JiraClient()
 
 router = APIRouter(tags=['Jira Integration'])
 
+@router.get('/status')
+async def jira_status(user: Dict = Depends(get_current_user)):
+    try:
+        uid = user.get('uid', None)
+        jira_connected = db.get_connection_status('jira', uid)
+        return {'connected': jira_connected}
+    
+    except Exception as e:
+        print(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to retrieve Jira connection status.'
+        )
 
 @router.post('/connect')
 async def jira_connect(user: Dict = Depends(get_current_user)):
@@ -42,7 +55,7 @@ async def jira_connect(user: Dict = Depends(get_current_user)):
         # Save the auth state using the new generic method
         db.save_auth_state(tool_name='jira', uid=uid, state=state)
 
-        return {'redirect_url': auth_url}
+        return RedirectResponse(url=auth_url)
     
     except Exception as e:
         print(e)
