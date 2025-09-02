@@ -154,7 +154,7 @@ async def get_jira_projects(user: Dict = Depends(get_current_user)):
             print('Access token expired, attempting to refresh...')
             new_tokens = jira_client.refresh_access_token(refresh_token)
 
-            secret_name = secret_path.split('/')[-2]
+            secret_name = secret_path.split('/')[-1]
             sm.store_secret(secret_name, json.dumps(new_tokens))
 
         tokens_json = sm.get_secret(secret_path)
