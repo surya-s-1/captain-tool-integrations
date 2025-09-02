@@ -7,6 +7,7 @@ JIRA_CLIENT_ID = os.getenv('JIRA_CLIENT_ID')
 JIRA_CLIENT_SECRET = os.getenv('JIRA_CLIENT_SECRET')
 JIRA_REDIRECT_URI = os.getenv('JIRA_REDIRECT_URI')
 
+
 class JiraClient:
     '''
     Handles all interactions with the Jira REST API, including OAuth flows.
@@ -69,14 +70,30 @@ class JiraClient:
         response.raise_for_status()
         return response.json()
 
-    def get_projects(self, access_token):
+    def get_cloud_ids(self, access_token):
         '''
-        Fetches the list of all projects visible to the user.
+        Fetches the user's cloud ID from the Atlassian platform.
         '''
-        url = f'{self.base_api_url}/ex/jira/rest/api/3/project'
+        url = f'{self.base_api_url}/oauth/token/accessible-resources'
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Accept': 'application/json',
         }
         response = requests.get(url, headers=headers)
         return response
+
+    def get_projects(self, access_token, cloud_ids):
+        '''
+        Fetches the list of all projects visible to the user.
+        '''
+        projects = []
+        for cloud_id in cloud_ids:
+            url = f'{self.base_api_url}/ex/jira/{cloud_id.get('id')}/rest/api/3/project'
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/json',
+            }
+            response = requests.get(url, headers=headers)
+            projects.extend(response.json())
+
+        return projects
