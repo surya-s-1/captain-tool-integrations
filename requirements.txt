@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+requests
+google-cloud-firestore
+google-cloud-secret-manager
+firebase-admin

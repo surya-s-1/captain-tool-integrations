@@ -1,0 +1,55 @@
+from google.cloud import firestore
+import os
+
+GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
+FIRESTORE_DATABASE = os.getenv('FIRESTORE_DATABASE')
+
+class FirestoreDB:
+    '''
+    A client for interacting with Google Cloud Firestore.
+    This module is tool-agnostic and uses the GOOGLE_CLOUD_PROJECT
+    environment variable for initialization.
+    '''
+
+    def __init__(self):
+        self.db = firestore.Client(project=GOOGLE_CLOUD_PROJECT, database=FIRESTORE_DATABASE)
+
+    def save_auth_state(self, tool_name, uid, state):
+        '''
+        Saves the state parameter for a user in a tool-specific collection.
+        This is for validating the OAuth callback.
+        '''
+        doc_ref = self.db.collection('tools', tool_name, 'auth_states').document(uid)
+        doc_ref.set({'state': state})
+
+    def get_auth_state(self, tool_name, uid):
+        '''
+        Retrieves and deletes the state parameter for a user.
+        '''
+        doc_ref = self.db.collection('tools', tool_name, 'auth_states').document(uid)
+        doc = doc_ref.get()
+        if doc.exists:
+            state = doc.to_dict().get('state')
+            doc_ref.delete()
+            return state
+        return None
+
+    def save_secret_path(self, tool_name, uid, secret_path):
+        '''
+        Saves the path to the Secret Manager secret for a user.
+        This uses the user's requested structure: a collection with uid and secret_path fields.
+        '''
+        doc_ref = self.db.collection('secrets', 'tools', tool_name).document(uid)
+        doc_ref.set({'uid': uid, 'secret_path': secret_path})
+
+    def get_secret_path(self, tool_name, uid):
+        '''
+        Retrieves the Secret Manager path for a user by querying on the uid.
+        This is a less direct lookup than by document ID.
+        '''
+        collection_ref = self.db.collection('secrets', tool_name)
+        query = collection_ref.where('uid', '==', uid).limit(1)
+        docs = query.stream()
+        for doc in docs:
+            return doc.to_dict()
+        return None
