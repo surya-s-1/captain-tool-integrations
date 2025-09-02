@@ -23,7 +23,7 @@ class JiraClient:
         '''
         Generates the URL to redirect the user for Jira authorization.
         '''
-        scopes = 'read:jira-work read:jira-user write:jira-work'
+        scopes = 'read:jira-work read:jira-user write:jira-work offline_access'
         params = {
             'audience': 'api.atlassian.com',
             'client_id': self.client_id,

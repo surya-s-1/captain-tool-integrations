@@ -52,9 +52,9 @@ class FirestoreDB:
         Retrieves the Secret Manager path for a user by querying on the uid.
         This is a less direct lookup than by document ID.
         '''
-        collection_ref = self.db.collection('secrets', tool_name)
+        collection_ref = self.db.collection('secrets', 'tools', tool_name)
         query = collection_ref.where('uid', '==', uid).limit(1)
-        docs = query.stream()
+        docs = query.get()
         for doc in docs:
             return doc.to_dict()
         return None
