@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import os
@@ -7,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from tools.jira.router import router as JiraRouter
+from projects.router import router as ProjectsRouter
 
 GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID')
 ALLOW_DOMAINS = os.getenv('ALLOW_DOMAINS', '')
@@ -18,6 +20,10 @@ app = FastAPI(
     description='A service for creating test cases by integrating with various tools like Jira.',
 )
 
+app.include_router(router=JiraRouter, prefix='/tools/jira')
+app.include_router(router=ProjectsRouter, prefix='/projects')
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINS,
@@ -26,11 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router=JiraRouter, prefix='/tools/jira')
-
 @app.get('/health')
 def health_check():
     return 'OK'
+
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=8001)

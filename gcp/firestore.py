@@ -4,6 +4,7 @@ import os
 GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 FIRESTORE_DATABASE = os.getenv('FIRESTORE_DATABASE')
 
+
 class FirestoreDB:
     '''
     A client for interacting with Google Cloud Firestore.
@@ -12,8 +13,10 @@ class FirestoreDB:
     '''
 
     def __init__(self):
-        self.db = firestore.Client(project=GOOGLE_CLOUD_PROJECT, database=FIRESTORE_DATABASE)
-    
+        self.db = firestore.Client(
+            project=GOOGLE_CLOUD_PROJECT, database=FIRESTORE_DATABASE
+        )
+
     def get_connection_status(self, tool_name, uid):
         doc_ref = self.db.collection('secrets', 'tools', tool_name).document(uid)
         doc = doc_ref.get()
@@ -58,3 +61,26 @@ class FirestoreDB:
         for doc in docs:
             return doc.to_dict()
         return None
+
+    def create_project(self, tool_name, project_key, project_name):
+        project_doc_ref = self.db.collection('projects').document()
+        project_doc_ref.set(
+            {
+                'tool': tool_name,
+                'toolProjectName': project_name,
+                'toolProjectKey': project_key,
+                'project_id': project_doc_ref.id,
+                'created_at': firestore.SERVER_TIMESTAMP,
+            }
+        )
+
+        versions_doc_ref = project_doc_ref.collection('versions').document()
+        versions_doc_ref.set(
+            {
+                'version': versions_doc_ref.id,
+                'project_name': project_name,
+                'project_id': project_doc_ref.id,
+                'status': 'CREATED',
+                'created_at': firestore.SERVER_TIMESTAMP
+            }
+        )
