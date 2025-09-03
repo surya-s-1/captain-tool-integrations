@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 requests
+python-multipart
+google-cloud-storage
 google-cloud-firestore
 google-cloud-secret-manager
 firebase-admin
