@@ -88,3 +88,12 @@ class FirestoreDB:
         project_doc_ref.update({
             'latest_version': versions_doc_ref.id
         })
+
+    def update_version_files(self, project_id, version, files):
+        if not files:
+            return
+
+        version_ref = self.db.collection('projects').document(project_id).collection('versions').document(version)
+        version_ref.update({
+            'files': files
+        })

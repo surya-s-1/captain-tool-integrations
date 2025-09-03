@@ -77,6 +77,8 @@ def upload_docs(
             )
 
             uploaded_files.append({ 'url': file_path, 'name': file.filename, 'type': file.content_type })
+        
+        db.update_version_files(project_id, version, uploaded_files)
 
         # request = auth_requests.Request()
         # id_token = oauth2_id_token.fetch_id_token(request, TEXT_EXTRACTION_URL)
