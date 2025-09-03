@@ -84,7 +84,7 @@ def upload_docs(
         message_data = {
             'project_id': project_id,
             'version': version,
-            'files': uploaded_files
+            'files': [f.get('url') for f in uploaded_files]
         }
 
         response = requests.post(
