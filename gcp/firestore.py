@@ -84,3 +84,7 @@ class FirestoreDB:
                 'created_at': firestore.SERVER_TIMESTAMP
             }
         )
+
+        project_doc_ref.update({
+            'latest_version': versions_doc_ref.id
+        })
