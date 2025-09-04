@@ -88,12 +88,12 @@ class JiraClient:
         '''
         projects = []
         for cloud_id in cloud_ids:
-            url = f'{self.base_api_url}/ex/jira/{cloud_id.get('id')}/rest/api/3/project'
+            url = f'{self.base_api_url}/ex/jira/{cloud_id.get('id')}/rest/api/3/project/search'
             headers = {
                 'Authorization': f'Bearer {access_token}',
                 'Accept': 'application/json',
             }
             response = requests.get(url, headers=headers)
-            projects.extend(response.json())
+            projects.extend(response.json().get('values', []))
 
         return projects
