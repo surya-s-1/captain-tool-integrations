@@ -81,19 +81,42 @@ class FirestoreDB:
                 'project_name': project_name,
                 'project_id': project_doc_ref.id,
                 'status': 'CREATED',
-                'created_at': firestore.SERVER_TIMESTAMP
+                'created_at': firestore.SERVER_TIMESTAMP,
             }
         )
 
-        project_doc_ref.update({
-            'latest_version': versions_doc_ref.id
-        })
+        project_doc_ref.update({'latest_version': versions_doc_ref.id})
 
-    def update_version_files(self, project_id, version, files):
+    def update_version(self, project_id, version, manual_verification, files):
         if not files:
             return
 
-        version_ref = self.db.collection('projects').document(project_id).collection('versions').document(version)
-        version_ref.update({
-            'files': files
-        })
+        version_ref = (
+            self.db.collection('projects')
+            .document(project_id)
+            .collection('versions')
+            .document(version)
+        )
+        version_ref.update({'manual_verification': manual_verification, 'files': files})
+
+    def mark_requirement_deleted(self, project_id, version, req_id):
+        req_ref = (
+            self.db.collection('projects')
+            .document(project_id)
+            .collection('versions')
+            .document(version)
+            .collection('requirements')
+            .document(req_id)
+        )
+        req_ref.update({'deleted': True})
+
+    def mark_testcase_deleted(self, project_id, version, tc_id):
+        req_ref = (
+            self.db.collection('projects')
+            .document(project_id)
+            .collection('versions')
+            .document(version)
+            .collection('testcases')
+            .document(tc_id)
+        )
+        req_ref.update({'deleted': True})
