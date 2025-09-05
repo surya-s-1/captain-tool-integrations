@@ -62,11 +62,13 @@ class FirestoreDB:
             return doc.to_dict()
         return None
 
-    def create_project(self, tool_name, project_key, project_name):
+    def create_project(self, tool_name, site_domain, site_id, project_key, project_name):
         project_doc_ref = self.db.collection('projects').document()
         project_doc_ref.set(
             {
                 'tool': tool_name,
+                'toolSiteDomain': site_domain,
+                'toolSiteId': site_id,
                 'toolProjectName': project_name,
                 'toolProjectKey': project_key,
                 'project_id': project_doc_ref.id,
@@ -87,36 +89,64 @@ class FirestoreDB:
 
         project_doc_ref.update({'latest_version': versions_doc_ref.id})
 
-    def update_version(self, project_id, version, manual_verification, files):
-        if not files:
-            return
+    def get_project_details(self, project_id):
+        '''
+        Fetches a project document to retrieve key details like the Jira project key.
+        '''
+        doc_ref = self.db.collection('projects').document(project_id)
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
 
+    def get_testcases(self, project_id, version_id):
+        '''
+        Fetches all test cases for a given project and version.
+        '''
+        collection_ref = (
+            self.db.collection('projects')
+            .document(project_id)
+            .collection('versions')
+            .document(version_id)
+            .collection('testcases')
+        )
+        return [doc.to_dict() for doc in collection_ref.get()]
+
+    def update_version(self, project_id, version, update_details):
         version_ref = (
             self.db.collection('projects')
             .document(project_id)
             .collection('versions')
             .document(version)
         )
-        version_ref.update({'manual_verification': manual_verification, 'files': files})
+        version_ref.update(update_details)
 
-    def mark_requirement_deleted(self, project_id, version, req_id):
-        req_ref = (
+    def update_requirement(self, project_id, version_id, req_id, update_details):
+        '''
+        Updates a specific test case document with its new tool details.
+        '''
+        doc_ref = (
             self.db.collection('projects')
             .document(project_id)
             .collection('versions')
-            .document(version)
+            .document(version_id)
             .collection('requirements')
             .document(req_id)
         )
-        req_ref.update({'deleted': True})
+        doc_ref.update(update_details)
 
-    def mark_testcase_deleted(self, project_id, version, tc_id):
-        req_ref = (
+    def update_testcase(
+        self, project_id, version_id, testcase_id, update_details
+    ):
+        '''
+        Updates a specific test case document with its new tool details.
+        '''
+        doc_ref = (
             self.db.collection('projects')
             .document(project_id)
             .collection('versions')
-            .document(version)
+            .document(version_id)
             .collection('testcases')
-            .document(tc_id)
+            .document(testcase_id)
         )
-        req_ref.update({'deleted': True})
+        doc_ref.update(update_details)

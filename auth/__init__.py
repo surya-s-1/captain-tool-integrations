@@ -14,8 +14,8 @@ def get_current_user(cred: HTTPAuthorizationCredentials = Depends(http_bearer)) 
     if not cred:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Bearer authentication required",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail='Bearer authentication required',
+            headers={'WWW-Authenticate': 'Bearer'},
         )
 
     id_token = cred.credentials
@@ -25,12 +25,12 @@ def get_current_user(cred: HTTPAuthorizationCredentials = Depends(http_bearer)) 
 
     except auth.ExpiredIdTokenError:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="ID token has expired"
+            status_code=status.HTTP_403_FORBIDDEN, detail='ID token has expired'
         )
 
     except auth.InvalidIdTokenError:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid ID token"
+            status_code=status.HTTP_403_FORBIDDEN, detail='Invalid ID token'
         )
 
     return decoded_token

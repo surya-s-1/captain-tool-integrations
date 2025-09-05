@@ -1,20 +1,37 @@
 import os
+import json
 import requests
 from typing import Dict, List
-from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Depends,
+    status,
+    UploadFile,
+    File,
+    Form,
+    BackgroundTasks,
+)
 
 import google.auth.transport.requests as auth_requests
 import google.oauth2.id_token as oauth2_id_token
 
-from projects.models import ConnectProjectRequest
 from auth import get_current_user
+from tools.jira.client import JiraClient
+
+from projects.models import ConnectProjectRequest
+from projects.functions import create_on_jira
+
 from gcp.firestore import FirestoreDB
+from gcp.secret_manager import SecretManager
 from gcp.storage import upload_file_to_gcs
 
 TEXT_EXTRACTION_URL = os.getenv('TEXT_EXTRACTION_URL')
 TEST_CREATION_URL = os.getenv('TEST_CREATION_URL')
 
 db = FirestoreDB()
+sm = SecretManager()
+jira_client = JiraClient()
 router = APIRouter(tags=['Project Actions'])
 
 
@@ -22,19 +39,30 @@ router = APIRouter(tags=['Project Actions'])
 def connect_project(
     user: Dict = Depends(get_current_user), request: ConnectProjectRequest = None
 ):
-    if not request.tool or not request.projectKey or not request.projectName:
+    if (
+        not request.tool
+        or not request.siteId
+        or not request.projectKey
+        or not request.projectName
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Tool, projectKey and projectName are required.',
+            detail='Tool, siteId, projectKey and projectName are required.',
         )
 
     tool_name = request.tool
+    site_id = request.siteId
+    site_domain = request.siteDomain
     project_key = request.projectKey
     project_name = request.projectName
 
     try:
         db.create_project(
-            tool_name=tool_name, project_key=project_key, project_name=project_name
+            tool_name=tool_name,
+            site_id=site_id,
+            site_domain=site_domain,
+            project_key=project_key,
+            project_name=project_name,
         )
 
         return f'{tool_name}\'s {project_name} connected successfully.'
@@ -81,8 +109,21 @@ def upload_docs(
             uploaded_files.append(
                 {'url': file_path, 'name': file.filename, 'type': file.content_type}
             )
+        
+        if not uploaded_files:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='No files uploaded.',
+            )
 
-        db.update_version(project_id, version, manual_verification == 'true', uploaded_files)
+        db.update_version(
+            project_id,
+            version,
+            {
+                'manual_verification': manual_verification == 'true',
+                'files': uploaded_files,
+            },
+        )
 
         # request = auth_requests.Request()
         # id_token = oauth2_id_token.fetch_id_token(request, TEXT_EXTRACTION_URL)
@@ -109,6 +150,7 @@ def upload_docs(
             detail=f'Failed to upload files: {str(e)}',
         )
 
+
 @router.delete('/{project_id}/v/{version}/r/{req_id}/delete')
 def delete_req(
     user: Dict = Depends(get_current_user),
@@ -119,11 +161,11 @@ def delete_req(
     if not project_id or not version or not req_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Project ID, version and req_id are required.'
+            detail='Project ID, version and req_id are required.',
         )
 
     try:
-        db.mark_requirement_deleted(project_id, version, req_id)
+        db.update_requirement(project_id, version, req_id, {'deleted': True})
         return f'Requirement {req_id} marked as deleted successfully.'
     except Exception as e:
         raise HTTPException(
@@ -146,13 +188,14 @@ def delete_tc(
         )
 
     try:
-        db.mark_testcase_deleted(project_id, version, tc_id)
+        db.update_testcase(project_id, version, tc_id, {'deleted': True})
         return f'Test case {tc_id} marked as deleted successfully.'
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to mark test case as deleted: {str(e)}',
         )
+
 
 @router.post('/{project_id}/v/{version}/requirements/confirm')
 def confirm_requirements(
@@ -184,31 +227,21 @@ def confirm_requirements(
         )
 
 
-# @router.post('/{project_id}/v/{version}/testcases/confirm')
-# def confirm_test_cases(
-#     user: Dict = Depends(get_current_user),
-#     project_id: str = None,
-#     version: str = None,
-# ):
-#     if not project_id or not version:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail='Project ID, version and tc_ids are required.',
-#         )
+@router.post('/{project_id}/v/{version}/testcases/confirm')
+def create_testcases_on_jira(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+):
+    if not project_id or not version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
 
-#     try:
-#         requests.post(
-#             TEST_CREATION_URL,
-#             json={
-#                 'project_id': project_id,
-#                 'version': version,
-#             },
-#             timeout=30,
-#         )
+    uid = user.get('uid', None)
 
-#         return 'Test cases confirmed successfully.'
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f'Failed to confirm test cases: {str(e)}',
-#         )
+    background_tasks.add_task(create_on_jira, uid, project_id, version)
+
+    return 'OK'

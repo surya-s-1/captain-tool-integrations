@@ -131,45 +131,25 @@ async def get_jira_projects(user: Dict = Depends(get_current_user)):
         )
 
     try:
-        # Get the secret path using the generic Firestore method
-        secret_path_doc = db.get_secret_path(tool_name='jira', uid=uid)
-        if not secret_path_doc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail='User not connected to Jira.',
-            )
+        access_token = jira_client.get_usage_access_token(uid)
+        if not access_token:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        secret_path = secret_path_doc.get('secret_path')
-
-        # Get the tokens using the generic Secret Manager method
-        tokens_json = sm.get_secret(secret_path)
-        tokens = json.loads(tokens_json)
-
-        access_token = tokens['access_token']
-        refresh_token = tokens['refresh_token']
-
-        cloud_ids = jira_client.get_cloud_ids(tokens['access_token'])
+        cloud_ids = jira_client.get_cloud_ids(access_token)
 
         if cloud_ids.status_code == 401:
             print('Access token expired, attempting to refresh...')
-            new_tokens = jira_client.refresh_access_token(refresh_token)
 
-            secret_name = secret_path.split('/')[-1]
-            sm.store_secret(secret_name, json.dumps(new_tokens))
+            access_token = jira_client.get_usage_access_token(uid=uid, new_set=True)
+            cloud_ids = jira_client.get_cloud_ids(access_token)
 
-        tokens_json = sm.get_secret(secret_path)
-        tokens = json.loads(tokens_json)
+            if cloud_ids.status_code == 401:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
 
-        access_token = tokens['access_token']
-        refresh_token = tokens['refresh_token']
-
-        cloud_ids = jira_client.get_cloud_ids(tokens['access_token'])
         cloud_ids = [
-            {
-                'id': r['id'], 
-                'name': r['name'], 
-                'url': r['url']
-            }
+            {'id': r['id'], 'name': r['name'], 'url': r['url']}
             for r in cloud_ids.json()
         ]
 
