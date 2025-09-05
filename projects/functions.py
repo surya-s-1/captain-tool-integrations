@@ -25,7 +25,6 @@ def create_on_jira(uid, project_id, version):
             return 'No test cases found to sync.'
 
         project_details = db.get_project_details(project_id)
-        print('project_details', project_details)
 
         if (
             not project_details
