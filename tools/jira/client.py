@@ -135,6 +135,13 @@ class JiraClient:
             ):
                 continue
 
+            acceptance_criteria = testcase.get('acceptance_criteria', '')
+
+            # Build acceptance criteria into the description (if custom field not used)
+            description_text = testcase.get('description', '')
+            if acceptance_criteria:
+                description_text += f'\n\n*Acceptance Criteria:*\n{acceptance_criteria}'
+
             issue_payload = {
                 'fields': {
                     'project': {'key': project_key},
@@ -147,14 +154,15 @@ class JiraClient:
                                 'type': 'paragraph',
                                 'content': [
                                     {
-                                        'text': testcase.get('description'),
+                                        'text': description_text,
                                         'type': 'text',
                                     }
                                 ],
                             }
                         ],
                     },
-                    'issuetype': {'name': 'Task'},
+                    'issuetype': { 'name': 'Task' },
+                    'priority': { 'name': testcase.get('priority', 'Medium') },
                     'labels': [
                         'AI_Generated',
                         'Created_by_Captain',
@@ -191,9 +199,11 @@ class JiraClient:
         if not access_token:
             raise Exception('Access token not found')
 
-        next_page_token = None
+        start_at = 0
+        total = 1
+        fetched = 0
 
-        while True:
+        while fetched < total:
             url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/search'
 
             headers = {
@@ -204,11 +214,9 @@ class JiraClient:
             payload = {
                 'jql': f'labels = \'{label}\'',
                 'maxResults': max_results_per_page,
+                'startAt': start_at,
                 'fields': ['key', 'labels'],
             }
-
-            if next_page_token:
-                payload['nextPageToken'] = next_page_token
 
             response = requests.post(url, headers=headers, data=json.dumps(payload))
 
@@ -224,8 +232,6 @@ class JiraClient:
             query_result = response.json()
 
             current_issues = query_result.get('issues', [])
-            is_last = query_result.get('isLast', True)
-            next_page_token = query_result.get('nextPageToken')
 
             for issue in current_issues:
                 issue_key = issue.get('key')
@@ -234,11 +240,10 @@ class JiraClient:
                 issue_url = f'{cloud_domain}/browse/{issue_key}'
 
                 issues.append({'url': issue_url, 'labels': labels})
-
-            # If we've fetched all issues, break
-            if is_last:
-                next_page_token = None
-                break
+            
+            total = query_result.get('total', 0)
+            fetched += len(current_issues)
+            start_at += len(current_issues)
 
         return issues
 

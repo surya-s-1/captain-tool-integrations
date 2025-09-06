@@ -38,32 +38,29 @@ def create_on_jira(uid, project_id, version):
             )
             return
 
-        access_token = jira_client.get_usage_access_token(uid)
-        if not access_token:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-
         cloud_id = project_details.get('toolSiteId')
         cloud_domain = project_details.get('toolSiteDomain')
+        project_key = project_details.get('toolProjectKey')
 
         # # 1. Create in batches of 30
-        # batch_size = 30
+        batch_size = 40
 
-        # for i in range(0, len(testcases), batch_size):
-        #     batch = testcases[i : i + batch_size]
+        for i in range(0, len(testcases), batch_size):
+            batch = testcases[i : i + batch_size]
 
-        #     try:
-        #         jira_client.create_bulk_issues(
-        #             access_token, cloud_id, project_key, batch
-        #         )
+            try:
+                jira_client.create_bulk_issues(
+                    uid, cloud_id, project_key, batch
+                )
 
-        #     except Exception as e:
-        #         print(f'Error syncing a batch of test cases: {e}')
+            except Exception as e:
+                print(f'Error creating batch of test cases: {e}')
 
-        # db.update_version(
-        #         project_id=project_id,
-        #         version=version,
-        #         update_details{'status': 'COMPLETE_JIRA_CREATION'}
-        # )
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'COMPLETE_JIRA_CREATION'},
+        )
 
         db.update_version(
             project_id=project_id,
@@ -97,6 +94,8 @@ def create_on_jira(uid, project_id, version):
             # 3. Find matching issue and update as SUCCESS
             for issue in jira_issues:
                 labels = issue.get('labels', [])
+
+                print('testcase_id in labels', testcase_id in labels, testcase_id, labels)
 
                 if testcase_id in labels:
                     jira_link = issue.get('url', '')
