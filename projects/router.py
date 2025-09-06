@@ -36,11 +36,13 @@ router = APIRouter(tags=['Project Actions'])
 
 
 @router.post('/connect')
-def connect_project(
-    user: Dict = Depends(get_current_user), request: ConnectProjectRequest = None
+def access_project(
+    user: Dict = Depends(get_current_user),
+    request: ConnectProjectRequest = None
 ):
     if (
-        not request.tool
+        not request
+        or not request.tool
         or not request.siteId
         or not request.projectKey
         or not request.projectName
@@ -50,27 +52,43 @@ def connect_project(
             detail='Tool, siteId, projectKey and projectName are required.',
         )
 
-    tool_name = request.tool
-    site_id = request.siteId
-    site_domain = request.siteDomain
-    project_key = request.projectKey
-    project_name = request.projectName
+    uid = user.get('uid', '')
 
     try:
-        db.create_project(
-            tool_name=tool_name,
-            site_id=site_id,
-            site_domain=site_domain,
-            project_key=project_key,
-            project_name=project_name,
+        project_id = db.find_project_id_by_details(
+            tool_name=request.tool,
+            site_domain=request.siteDomain,
+            site_id=request.siteId,
+            project_key=request.projectKey,
         )
 
-        return f'{tool_name}\'s {project_name} connected successfully.'
+        if not project_id:
+            db.create_project(
+                tool_name=request.tool,
+                site_id=request.siteId,
+                site_domain=request.siteDomain,
+                project_key=request.projectKey,
+                project_name=request.projectName,
+            )
+
+            project_id = db.find_project_id_by_details(
+                tool_name=request.tool,
+                site_domain=request.siteDomain,
+                site_id=request.siteId,
+                project_key=request.projectKey,
+            )
+
+        db.update_project_users(
+            project_id=project_id,
+            uid=uid
+        )
+
+        return f'Connected successfully.'
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f'Failed to connect project: {str(e)}',
+            detail=f'Failed to connect: {str(e)}',
         )
 
 
