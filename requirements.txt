@@ -5,4 +5,6 @@ python-multipart
 google-cloud-storage
 google-cloud-firestore
 google-cloud-secret-manager
+google-cloud-workflow
+google-cloud-functions
 firebase-admin

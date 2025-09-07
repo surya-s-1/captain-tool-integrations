@@ -1,6 +1,5 @@
 import os
 import json
-import requests
 from typing import Dict, List
 from fastapi import (
     APIRouter,
@@ -9,12 +8,8 @@ from fastapi import (
     status,
     UploadFile,
     File,
-    Form,
     BackgroundTasks,
 )
-
-import google.auth.transport.requests as auth_requests
-import google.oauth2.id_token as oauth2_id_token
 
 from auth import get_current_user
 from tools.jira.client import JiraClient
@@ -26,8 +21,15 @@ from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
 from gcp.storage import upload_file_to_gcs
 
-REQUIREMENTS_WORFLOW_URL = os.getenv('REQUIREMENTS_WORFLOW_URL')
-TEST_CREATION_URL = os.getenv('TEST_CREATION_URL')
+from google.cloud.functions import CloudFunctionsServiceClient, CallFunctionRequest
+from google.cloud.workflows.executions_v1beta import (
+    Execution,
+    ExecutionsClient,
+    CreateExecutionRequest,
+)
+
+REQUIREMENTS_WORFLOW = os.getenv('REQUIREMENTS_WORFLOW')
+TESTCASE_CREATION_FUNCTION = os.getenv('TESTCASE_CREATION_FUNCTION')
 
 import logging
 logger = logging.getLogger(__name__)
@@ -37,6 +39,8 @@ sm = SecretManager()
 jira_client = JiraClient()
 router = APIRouter(tags=['Project Actions'])
 
+workflow_client = ExecutionsClient()
+functions_client = CloudFunctionsServiceClient()
 
 @router.post('/connect')
 def access_project(
@@ -139,30 +143,22 @@ def upload_docs(
             {'files': uploaded_files, 'files_uploaded_by': user.get('uid', '')},
         )
 
-        request = auth_requests.Request()
-        id_token = oauth2_id_token.fetch_id_token(request, REQUIREMENTS_WORFLOW_URL)
-
         message_data = {
             'project_id': project_id,
             'version': version,
             'files': [f.get('url') for f in uploaded_files],
         }
 
-        response = requests.post(
-            REQUIREMENTS_WORFLOW_URL,
-            headers={'Authorization': f'Bearer {id_token}'},
-            data=json.dumps({'argument': json.dumps(message_data)}),
-            timeout=30,
+        execution = Execution(argument=json.dumps(message_data))
+
+        request = CreateExecutionRequest(
+            parent=REQUIREMENTS_WORFLOW, execution=execution
         )
 
-        response.raise_for_status()
-
-        print(f'{REQUIREMENTS_WORFLOW_URL} responded with {response.status_code}')
-
-        execution_details = response.json()
+        response = workflow_client.create_execution(request=request)
 
         print(
-            f"Workflow execution started successfully. Execution ID: {execution_details}"
+            f"Workflow execution started successfully. Execution ID: {response.name}"
         )
 
         return f'Files uploaded successfully.'
@@ -258,17 +254,11 @@ def confirm_requirements(
             {'requirements_confirmed_by': user.get('uid', '')},
         )
 
-        request = auth_requests.Request()
-        id_token = oauth2_id_token.fetch_id_token(request, TEST_CREATION_URL)
-
-        requests.post(
-            TEST_CREATION_URL,
-            headers={'Authorization': f'Bearer {id_token}'},
-            json={
-                'project_id': project_id,
-                'version': version,
-            },
-            timeout=30,
+        functions_client.call_function(
+            request=CallFunctionRequest(
+                name=TESTCASE_CREATION_FUNCTION,
+                data=json.dumps({'project_id': project_id, 'version': version}),
+            )
         )
 
         return 'Requirements confirmed successfully.'
