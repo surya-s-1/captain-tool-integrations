@@ -252,8 +252,12 @@ def confirm_requirements(
             {'requirements_confirmed_by': user.get('uid', '')},
         )
 
+        request = auth_requests.Request()
+        id_token = oauth2_id_token.fetch_id_token(request, TEST_CREATION_URL)
+
         requests.post(
             TEST_CREATION_URL,
+            headers={'Authorization': f'Bearer {id_token}'},
             json={
                 'project_id': project_id,
                 'version': version,
