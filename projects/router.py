@@ -26,7 +26,7 @@ from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
 from gcp.storage import upload_file_to_gcs
 
-TEXT_EXTRACTION_URL = os.getenv('TEXT_EXTRACTION_URL')
+REQUIREMENTS_WORFLOW_URL = os.getenv('REQUIREMENTS_WORFLOW_URL')
 TEST_CREATION_URL = os.getenv('TEST_CREATION_URL')
 
 db = FirestoreDB()
@@ -37,8 +37,7 @@ router = APIRouter(tags=['Project Actions'])
 
 @router.post('/connect')
 def access_project(
-    user: Dict = Depends(get_current_user),
-    request: ConnectProjectRequest = None
+    user: Dict = Depends(get_current_user), request: ConnectProjectRequest = None
 ):
     if (
         not request
@@ -78,10 +77,7 @@ def access_project(
                 project_key=request.projectKey,
             )
 
-        db.update_project_users(
-            project_id=project_id,
-            uid=uid
-        )
+        db.update_project_users(project_id=project_id, uid=uid)
 
         return f'Connected successfully.'
 
@@ -97,7 +93,6 @@ def upload_docs(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
-    manual_verification: str = Form('true'),
     files: List[UploadFile] = File([]),
 ):
     if not project_id or not version or not files:
@@ -127,7 +122,7 @@ def upload_docs(
             uploaded_files.append(
                 {'url': file_path, 'name': file.filename, 'type': file.content_type}
             )
-        
+
         if not uploaded_files:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -137,14 +132,11 @@ def upload_docs(
         db.update_version(
             project_id,
             version,
-            {
-                'manual_verification': manual_verification == 'true',
-                'files': uploaded_files,
-            },
+            {'files': uploaded_files, 'files_uploaded_by': user.get('uid', '')},
         )
 
-        # request = auth_requests.Request()
-        # id_token = oauth2_id_token.fetch_id_token(request, TEXT_EXTRACTION_URL)
+        request = auth_requests.Request()
+        id_token = oauth2_id_token.fetch_id_token(request, REQUIREMENTS_WORFLOW_URL)
 
         message_data = {
             'project_id': project_id,
@@ -153,16 +145,27 @@ def upload_docs(
         }
 
         response = requests.post(
-            TEXT_EXTRACTION_URL,
-            # headers={'Authorization': f'Bearer {id_token}'},
-            json=message_data,
+            REQUIREMENTS_WORFLOW_URL,
+            headers={'Authorization': f'Bearer {id_token}'},
+            data=json.dumps({'argument': json.dumps(message_data)}),
             timeout=30,
         )
 
-        print(f'{TEXT_EXTRACTION_URL} responded with {response.status_code}')
+        response.raise_for_status()
+
+        print(f'{REQUIREMENTS_WORFLOW_URL} responded with {response.status_code}')
+
+        execution_details = response.json()
+
+        print(
+            f"Workflow execution started successfully. Execution ID: {execution_details}"
+        )
 
         return f'Files uploaded successfully.'
+
     except Exception as e:
+        print(e)
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to upload files: {str(e)}',
@@ -183,8 +186,14 @@ def delete_req(
         )
 
     try:
-        db.update_requirement(project_id, version, req_id, {'deleted': True})
+        db.update_requirement(
+            project_id,
+            version,
+            req_id,
+            {'deleted': True, 'deleted_by': user.get('uid', '')},
+        )
         return f'Requirement {req_id} marked as deleted successfully.'
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -206,8 +215,17 @@ def delete_tc(
         )
 
     try:
-        db.update_testcase(project_id, version, tc_id, {'deleted': True})
+        db.update_testcase(
+            project_id,
+            version,
+            tc_id,
+            {
+                'deleted': True,
+                'deleted_by': user.get('uid', ''),
+            },
+        )
         return f'Test case {tc_id} marked as deleted successfully.'
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -228,6 +246,12 @@ def confirm_requirements(
         )
 
     try:
+        db.update_version(
+            project_id,
+            version,
+            {'requirements_confirmed_by': user.get('uid', '')},
+        )
+
         requests.post(
             TEST_CREATION_URL,
             json={

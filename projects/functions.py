@@ -16,7 +16,7 @@ def create_on_jira(uid, project_id, version):
         db.update_version(
             project_id=project_id,
             version=version,
-            update_details={'status': 'START_JIRA_CREATION'},
+            update_details={'status': 'START_JIRA_CREATION', 'testcases_confirmed_by': uid}
         )
 
         testcases = db.get_testcases(project_id, version)
