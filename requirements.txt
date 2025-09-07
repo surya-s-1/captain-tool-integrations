@@ -6,5 +6,4 @@ google-cloud-storage
 google-cloud-firestore
 google-cloud-secret-manager
 google-cloud-workflows
-google-cloud-functions
 firebase-admin

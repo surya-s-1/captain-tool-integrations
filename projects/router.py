@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 from typing import Dict, List
 from fastapi import (
     APIRouter,
@@ -21,15 +22,16 @@ from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
 from gcp.storage import upload_file_to_gcs
 
-from google.cloud.functions import CloudFunctionsServiceClient, CallFunctionRequest
 from google.cloud.workflows.executions_v1beta import (
     Execution,
     ExecutionsClient,
     CreateExecutionRequest,
 )
+import google.auth.transport.requests as auth_requests
+import google.oauth2.id_token as oauth2_id_token
 
 REQUIREMENTS_WORFLOW = os.getenv('REQUIREMENTS_WORFLOW')
-TESTCASE_CREATION_FUNCTION = os.getenv('TESTCASE_CREATION_FUNCTION')
+TESTCASE_CREATION_URL = os.getenv('TESTCASE_CREATION_URL')
 
 import logging
 logger = logging.getLogger(__name__)
@@ -40,7 +42,6 @@ jira_client = JiraClient()
 router = APIRouter(tags=['Project Actions'])
 
 workflow_client = ExecutionsClient()
-functions_client = CloudFunctionsServiceClient()
 
 @router.post('/connect')
 def access_project(
@@ -254,12 +255,22 @@ def confirm_requirements(
             {'requirements_confirmed_by': user.get('uid', '')},
         )
 
-        functions_client.call_function(
-            request=CallFunctionRequest(
-                name=TESTCASE_CREATION_FUNCTION,
-                data=json.dumps({'project_id': project_id, 'version': version}),
-            )
+        request = auth_requests.Request()
+        id_token = oauth2_id_token.fetch_id_token(request, TESTCASE_CREATION_URL)
+
+        response = requests.post(
+            TESTCASE_CREATION_URL,
+            headers={'Authorization': f'Bearer {id_token}'},
+            json={
+                'project_id': project_id,
+                'version': version,
+            },
+            timeout=30,
         )
+
+        response.raise_for_status()
+
+        logging.info(f'{TESTCASE_CREATION_URL} responded with {response.status_code}')
 
         return 'Requirements confirmed successfully.'
     except Exception as e:
