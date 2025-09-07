@@ -3,12 +3,15 @@ import json
 import os
 from urllib.parse import urlencode
 
+import logging
 JIRA_CLIENT_ID = os.getenv('JIRA_CLIENT_ID')
 JIRA_CLIENT_SECRET = os.getenv('JIRA_CLIENT_SECRET')
 JIRA_REDIRECT_URI = os.getenv('JIRA_REDIRECT_URI')
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
+
+logger = logging.getLogger(__name__)
 
 db = FirestoreDB()
 sm = SecretManager()
@@ -46,47 +49,58 @@ class JiraClient:
         '''
         Exchanges the authorization code for access and refresh tokens.
         '''
-        url = f'{self.base_auth_url}/oauth/token'
-        headers = {'Content-Type': 'application/json'}
-        data = {
-            'grant_type': 'authorization_code',
-            'client_id': self.client_id,
-            'client_secret': self.client_secret,
-            'code': auth_code,
-            'redirect_uri': self.redirect_uri,
-        }
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        response.raise_for_status()
-
-        return response.json()
+        try:
+            url = f'{self.base_auth_url}/oauth/token'
+            headers = {'Content-Type': 'application/json'}
+            data = {
+                'grant_type': 'authorization_code',
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+                'code': auth_code,
+                'redirect_uri': self.redirect_uri,
+            }
+            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.exception('Error exchanging authorization code for tokens.')
+            raise
 
     def refresh_access_token(self, refresh_token):
         '''
         Uses the refresh token to get a new access token.
         '''
-        url = f'{self.base_auth_url}/oauth/token'
-        headers = {'Content-Type': 'application/json'}
-        data = {
-            'grant_type': 'refresh_token',
-            'client_id': self.client_id,
-            'client_secret': self.client_secret,
-            'refresh_token': refresh_token,
-        }
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        response.raise_for_status()
-        return response.json()
-
+        try:
+            url = f'{self.base_auth_url}/oauth/token'
+            headers = {'Content-Type': 'application/json'}
+            data = {
+                'grant_type': 'refresh_token',
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+                'refresh_token': refresh_token,
+            }
+            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response.raise_for_status()
+            return response.json()
+        
+        except requests.exceptions.RequestException as e:
+            logger.exception('Error refreshing access token.')
+            raise
     def get_cloud_ids(self, access_token):
         '''
         Fetches the user's cloud ID from the Atlassian platform.
         '''
-        url = f'{self.base_api_url}/oauth/token/accessible-resources'
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Accept': 'application/json',
-        }
-        response = requests.get(url, headers=headers)
-        return response
+        try:
+            url = f'{self.base_api_url}/oauth/token/accessible-resources'
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/json',
+            }
+            response = requests.get(url, headers=headers)
+            return response
+        except requests.exceptions.RequestException as e:
+            logger.exception('Error fetching cloud IDs.')
+            raise
 
     def get_projects(self, access_token, cloud_ids):
         '''
@@ -100,6 +114,8 @@ class JiraClient:
                 'Accept': 'application/json',
             }
             response = requests.get(url, headers=headers)
+
+            response.raise_for_status()
 
             current_projects = response.json().get('values', [])
 
@@ -248,22 +264,26 @@ class JiraClient:
         return issues
 
     def get_usage_access_token(self, uid, new_set=False):
-        secret_path_doc = db.get_secret_path(tool_name='jira', uid=uid)
-        if not secret_path_doc:
-            return None
+        try:
+            secret_path_doc = db.get_secret_path(tool_name='jira', uid=uid)
+            if not secret_path_doc:
+                logger.warning(f'No secret path found for Jira user {uid}.')
+                return None
 
-        secret_path = secret_path_doc.get('secret_path')
-        tokens_json = sm.get_secret(secret_path)
-        tokens = json.loads(tokens_json)
+            secret_path = secret_path_doc.get('secret_path')
+            tokens_json = sm.get_secret(secret_path)
+            tokens = json.loads(tokens_json)
 
-        if not new_set:
+            if not new_set:
+                return tokens['access_token']
+
+            refresh_token = tokens['refresh_token']
+            new_tokens = self.refresh_access_token(refresh_token)
+            secret_name = secret_path.split('/')[-1]
+            sm.store_secret(secret_name, json.dumps(new_tokens))
+            tokens_json = sm.get_secret(secret_path)
+            tokens = json.loads(tokens_json)
             return tokens['access_token']
-
-        refresh_token = tokens['refresh_token']
-        new_tokens = self.refresh_access_token(refresh_token)
-        secret_name = secret_path.split('/')[-1]
-        sm.store_secret(secret_name, json.dumps(new_tokens))
-        tokens_json = sm.get_secret(secret_path)
-        tokens = json.loads(tokens_json)
-
-        return tokens['access_token']
+        except Exception as e:
+            logger.exception(f'Error getting or refreshing Jira access token for user {uid}.')
+            raise

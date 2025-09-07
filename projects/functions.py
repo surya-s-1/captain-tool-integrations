@@ -1,4 +1,5 @@
 import json
+import logging
 from fastapi import HTTPException, status
 
 from tools.jira.client import JiraClient
@@ -7,6 +8,8 @@ from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
 
 db = FirestoreDB()
+
+logger = logging.getLogger(__name__)
 sm = SecretManager()
 jira_client = JiraClient()
 
@@ -21,7 +24,7 @@ def create_on_jira(uid, project_id, version):
 
         testcases = db.get_testcases(project_id, version)
         if not testcases:
-            print('No test cases found to sync.')
+            logger.info('No test cases found to sync.')
             return 'No test cases found to sync.'
 
         project_details = db.get_project_details(project_id)
@@ -54,7 +57,7 @@ def create_on_jira(uid, project_id, version):
                 )
 
             except Exception as e:
-                print(f'Error creating batch of test cases: {e}')
+                logger.exception(f'Error creating batch of test cases: {e}')
 
         db.update_version(
             project_id=project_id,
@@ -75,7 +78,7 @@ def create_on_jira(uid, project_id, version):
             )
 
         except Exception as e:
-            print(f'Error getting issues from Jira: {e}')
+            logger.exception(f'Error getting issues from Jira: {e}')
             db.update_version(
                 project_id=project_id,
                 version=version,
@@ -118,4 +121,4 @@ def create_on_jira(uid, project_id, version):
         db.update_version(project_id, version, {'status': 'COMPLETE_JIRA_SYNC'})
 
     except Exception as e:
-        print(f'Error syncing test cases to Jira: {e}')
+        logger.exception(f'Error syncing test cases to Jira: {e}')

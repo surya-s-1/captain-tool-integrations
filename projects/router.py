@@ -29,6 +29,9 @@ from gcp.storage import upload_file_to_gcs
 REQUIREMENTS_WORFLOW_URL = os.getenv('REQUIREMENTS_WORFLOW_URL')
 TEST_CREATION_URL = os.getenv('TEST_CREATION_URL')
 
+import logging
+logger = logging.getLogger(__name__)
+
 db = FirestoreDB()
 sm = SecretManager()
 jira_client = JiraClient()
@@ -82,6 +85,7 @@ def access_project(
         return f'Connected successfully.'
 
     except Exception as e:
+        logger.exception('Failed to connect to project.')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to connect: {str(e)}',
@@ -164,7 +168,7 @@ def upload_docs(
         return f'Files uploaded successfully.'
 
     except Exception as e:
-        print(e)
+        logger.exception('Failed to upload files.')
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -195,6 +199,7 @@ def delete_req(
         return f'Requirement {req_id} marked as deleted successfully.'
 
     except Exception as e:
+        logger.exception('Failed to delete requirement.')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to mark requirement as deleted: {str(e)}',
@@ -227,6 +232,7 @@ def delete_tc(
         return f'Test case {tc_id} marked as deleted successfully.'
 
     except Exception as e:
+        logger.exception('Failed to delete test case.')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to mark test case as deleted: {str(e)}',
@@ -267,6 +273,7 @@ def confirm_requirements(
 
         return 'Requirements confirmed successfully.'
     except Exception as e:
+        logger.exception('Failed to confirm requirements.')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to confirm requirements: {str(e)}',

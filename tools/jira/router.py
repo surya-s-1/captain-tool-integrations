@@ -1,6 +1,7 @@
 import os
 import json
 from typing import Dict
+import logging
 from fastapi import APIRouter, HTTPException, Request, Depends, status
 from fastapi.responses import RedirectResponse
 
@@ -12,6 +13,8 @@ from gcp.secret_manager import SecretManager
 from tools.jira.client import JiraClient
 
 FRONTEND_REDIRECT_URL = os.getenv('FRONTEND_REDIRECT_URL')
+
+logger = logging.getLogger(__name__)
 
 db = FirestoreDB()
 sm = SecretManager()
@@ -29,7 +32,7 @@ async def jira_status(user: Dict = Depends(get_current_user)):
         return {'connected': jira_connected}
 
     except Exception as e:
-        print(e)
+        logger.exception('Failed to retrieve Jira connection status.')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Failed to retrieve Jira connection status.',
@@ -61,7 +64,7 @@ async def jira_connect(user: Dict = Depends(get_current_user)):
         return {'redirect_url': auth_url}
 
     except Exception as e:
-        print(e)
+        logger.exception('Failed to initiate Jira OAuth flow.')
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -110,7 +113,7 @@ async def jira_auth_callback(request: Request):
         return RedirectResponse(url=f'{FRONTEND_REDIRECT_URL}')
 
     except Exception as e:
-        print(f'Error during Jira OAuth callback: {e}')
+        logger.exception('Error during Jira OAuth callback.')
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -138,7 +141,7 @@ async def get_jira_projects(user: Dict = Depends(get_current_user)):
         cloud_ids = jira_client.get_cloud_ids(access_token)
 
         if cloud_ids.status_code == 401:
-            print('Access token expired, attempting to refresh...')
+            logger.warning('Jira access token expired, attempting to refresh...')
 
             access_token = jira_client.get_usage_access_token(uid=uid, new_set=True)
             cloud_ids = jira_client.get_cloud_ids(access_token)
@@ -158,7 +161,7 @@ async def get_jira_projects(user: Dict = Depends(get_current_user)):
         return projects
 
     except Exception as e:
-        print(f'Error fetching Jira projects: {e}')
+        logger.exception('Error fetching Jira projects.')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Failed to retrieve Jira projects.',
