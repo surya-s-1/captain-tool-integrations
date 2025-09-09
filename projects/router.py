@@ -123,9 +123,7 @@ def upload_docs(
             file_path = upload_file_to_gcs(
                 object=file.file,
                 content_type=file.content_type,
-                project_id=project_id,
-                version=version,
-                file_name=f'{idx}_{file.filename}',
+                upload_path=f'projects/{project_id}/v_{version}/uploads/{idx}_{file.filename}',
             )
 
             uploaded_files.append(
