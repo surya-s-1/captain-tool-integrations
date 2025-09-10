@@ -128,7 +128,6 @@ class FirestoreDB:
             .collection('versions')
             .document(version_id)
             .collection('testcases')
-            .where('deleted', '==', False)
         )
         return [doc.to_dict() for doc in collection_ref.get()]
 

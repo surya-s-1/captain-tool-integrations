@@ -16,7 +16,7 @@ from auth import get_current_user
 from tools.jira.client import JiraClient
 
 from projects.models import ConnectProjectRequest
-from projects.functions import create_on_jira
+from projects.functions import create_on_jira, create_datasets
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
@@ -295,5 +295,6 @@ def create_testcases_on_jira(
     uid = user.get('uid', None)
 
     background_tasks.add_task(create_on_jira, uid, project_id, version)
+    background_tasks.add_task(create_datasets, project_id, version)
 
     return 'OK'
