@@ -135,6 +135,10 @@ def create_datasets(project_id, version):
         request = auth_requests.Request()
         id_token = oauth2_id_token.fetch_id_token(request, DATASET_TASKS_DISPATHER_URL)
 
+        logging.info(
+            f'Making request to {DATASET_TASKS_DISPATHER_URL}'
+        )
+
         response = requests.post(
             DATASET_TASKS_DISPATHER_URL,
             headers={'Authorization': f'Bearer {id_token}'},
@@ -142,7 +146,7 @@ def create_datasets(project_id, version):
                 'project_id': project_id,
                 'version': version,
             },
-            timeout=30,
+            timeout=600,
         )
 
         response.raise_for_status()
