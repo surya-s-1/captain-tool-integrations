@@ -105,7 +105,7 @@ class FirestoreDB:
 
         if docs:
             return docs[0].id
-        
+
         return None
 
     def get_project_details(self, project_id):
@@ -130,6 +130,23 @@ class FirestoreDB:
             .collection('testcases')
         )
         return [doc.to_dict() for doc in collection_ref.get()]
+
+    def get_testcase_details(self, project_id, version_id, testcase_id):
+        '''
+        Fetches a specific test case document.
+        '''
+        doc_ref = (
+            self.db.collection('projects')
+            .document(project_id)
+            .collection('versions')
+            .document(version_id)
+            .collection('testcases')
+            .document(testcase_id)
+        )
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
 
     def update_project_users(self, project_id, uid):
         version_ref = self.db.collection('projects').document(project_id)
@@ -171,3 +188,51 @@ class FirestoreDB:
             .document(testcase_id)
         )
         doc_ref.update(update_details)
+
+    # --- New Methods for Async Job Management ---
+    def create_download_job(
+        self, uid: str, project_id: str, version: str, testcase_id: str
+    ):
+        """
+        Creates a new document in the 'jobs' collection to track a download task.
+        """
+        job_ref = self.db.collection('jobs').document()
+        job_ref.set(
+            {
+                'project_id': project_id,
+                'version': version,
+                'testcase_id': testcase_id,
+                'uid': uid,
+                'job_id': job_ref.id,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'status': 'pending',
+                'created_at': firestore.SERVER_TIMESTAMP,
+            }
+        )
+
+        return job_ref.id
+
+    def get_download_job(self, job_id: str):
+        """
+        Retrieves a download job document.
+        """
+        job_ref = self.db.collection('jobs').document(job_id)
+        job_doc = job_ref.get()
+        return job_doc.to_dict() if job_doc.exists else None
+
+    def update_download_job_status(
+        self, job_id: str, status: str, file_name: str = None, result_url: str = None, error: str = None
+    ):
+        """
+        Updates the status and optional results or errors for a download job.
+        """
+        job_ref = self.db.collection('jobs').document(job_id)
+        update_data = {'status': status}
+        if result_url:
+            update_data['result_url'] = result_url
+            update_data['completed_at'] = firestore.SERVER_TIMESTAMP
+        if file_name:
+            update_data['file_name'] = file_name
+        if error:
+            update_data['error'] = error
+        job_ref.update(update_data)

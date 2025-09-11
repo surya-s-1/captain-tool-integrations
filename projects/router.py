@@ -1,4 +1,6 @@
 import os
+import io
+import uuid
 import json
 import requests
 from typing import Dict, List
@@ -10,17 +12,19 @@ from fastapi import (
     UploadFile,
     File,
     BackgroundTasks,
+    Body,
 )
+from starlette.responses import StreamingResponse
 
 from auth import get_current_user
 from tools.jira.client import JiraClient
 
 from projects.models import ConnectProjectRequest
-from projects.functions import create_on_jira
+from projects.functions import create_on_jira, background_zip_task
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
-from gcp.storage import upload_file_to_gcs
+from gcp.storage import upload_file_to_gcs, get_file_from_gcs  # New import for downloading files
 
 from google.cloud.workflows.executions_v1beta import (
     Execution,
@@ -35,6 +39,7 @@ TESTCASE_CREATION_URL = os.getenv('TESTCASE_CREATION_URL')
 DATASET_TASKS_DISPATHER_URL = os.getenv('DATASET_TASKS_DISPATHER_URL')
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 db = FirestoreDB()
@@ -43,6 +48,7 @@ jira_client = JiraClient()
 router = APIRouter(tags=['Project Actions'])
 
 workflow_client = ExecutionsClient()
+
 
 @router.post('/connect')
 def access_project(
@@ -157,9 +163,7 @@ def upload_docs(
 
         response = workflow_client.create_execution(request=request)
 
-        print(
-            f"Workflow execution started successfully. Execution ID: {response.name}"
-        )
+        print(f'Workflow execution started successfully. Execution ID: {response.name}')
 
         return f'Files uploaded successfully.'
 
@@ -344,3 +348,89 @@ def create_datasets_for_testcases(
         )
 
     return 'OK'
+
+
+@router.post('/v1/download/async', status_code=status.HTTP_202_ACCEPTED)
+async def submit_download_job(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    project_id: str = Body(..., embed=True),
+    version: str = Body(..., embed=True),
+    testcase_id: str = Body(..., embed=True),
+):
+    '''
+    Starts an asynchronous job to download and zip datasets.
+    '''
+    try:
+        uid = user.get('uid', None)
+        job_id = db.create_download_job(uid, project_id, version, testcase_id)
+
+        if not job_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail='Failed to create download job.',
+            )
+
+        background_tasks.add_task(
+            background_zip_task, job_id, project_id, version, testcase_id
+        )
+
+        return {'message': 'Download job started successfully', 'job_id': job_id}
+    
+    except Exception as e:
+        logger.exception(f'Error in submit_download_job: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to start download job.',
+        )
+
+
+@router.get('/v1/download/status/{job_id}')
+async def get_download_status(job_id: str):
+    '''
+    Checks the status of a download job. Returns the zip file if the job is completed.
+    '''
+    job_data = db.get_download_job(job_id)
+    if not job_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail='Job not found.'
+        )
+
+    status_str = job_data.get('status')
+
+    if status_str == 'completed':
+        zip_url = job_data.get('result_url')
+        file_name = job_data.get('file_name')
+
+        if not zip_url:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail='Job completed but no download URL found.',
+            )
+
+        try:
+            zip_content = get_file_from_gcs(zip_url)
+
+            headers = {
+                'Content-Disposition': f'attachment; filename={file_name}',
+                'Content-Type': 'application/zip',
+            }
+
+            return StreamingResponse(io.BytesIO(zip_content), headers=headers)
+        
+        except Exception as e:
+            logger.error(f'Failed to retrieve zip file for job {job_id}: {e}')
+
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail='Failed to retrieve zipped file.',
+            )
+
+    elif status_str == 'failed':
+        error = job_data.get('error', 'An unknown error occurred.')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Job failed: {error}',
+        )
+
+    return {'status': status_str}

@@ -1,7 +1,12 @@
+import os
+import io
+import zipfile
 import logging
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
+from gcp.storage import upload_file_to_gcs, get_file_from_gcs
+
 from tools.jira.client import JiraClient
 
 db = FirestoreDB()
@@ -10,12 +15,16 @@ jira_client = JiraClient()
 
 logger = logging.getLogger(__name__)
 
+
 def create_on_jira(uid, project_id, version):
     try:
         db.update_version(
             project_id=project_id,
             version=version,
-            update_details={'status': 'START_JIRA_CREATION', 'testcases_confirmed_by': uid}
+            update_details={
+                'status': 'START_JIRA_CREATION',
+                'testcases_confirmed_by': uid,
+            },
         )
 
         testcases = db.get_testcases(project_id, version)
@@ -51,9 +60,7 @@ def create_on_jira(uid, project_id, version):
             batch = testcases[i : i + batch_size]
 
             try:
-                jira_client.create_bulk_issues(
-                    uid, cloud_id, project_key, batch
-                )
+                jira_client.create_bulk_issues(uid, cloud_id, project_key, batch)
 
             except Exception as e:
                 logger.exception(f'Error creating batch of test cases: {e}')
@@ -97,7 +104,9 @@ def create_on_jira(uid, project_id, version):
             for issue in jira_issues:
                 labels = issue.get('labels', [])
 
-                print('testcase_id in labels', testcase_id in labels, testcase_id, labels)
+                print(
+                    'testcase_id in labels', testcase_id in labels, testcase_id, labels
+                )
 
                 if testcase_id in labels:
                     jira_link = issue.get('url', '')
@@ -121,3 +130,53 @@ def create_on_jira(uid, project_id, version):
 
     except Exception as e:
         logger.exception(f'Error syncing test cases to Jira: {e}')
+
+
+async def background_zip_task(
+    job_id: str, project_id: str, version: str, testcase_id: str
+):
+    '''
+    Background task to download GCS files and zip them.
+    The result is stored as a blob in the job document in Firestore.
+    '''
+    try:
+        db.update_download_job_status(job_id, 'in_progress')
+
+        testcase_data = db.get_testcase_details(project_id, version, testcase_id)
+
+        if not testcase_data or not testcase_data.get('datasets'):
+            db.update_download_job_status(job_id, 'failed', error='No datasets found')
+            return
+
+        datasets = testcase_data.get('datasets')
+        zip_buffer = io.BytesIO()
+
+        zip_name = f'{testcase_id}-{version}-{project_id}'
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for url in datasets:
+                if not url.startswith('gs://'):
+                    continue
+
+                try:
+                    file_content = get_file_from_gcs(url)
+                    content_type = url.split('.')[-1]
+
+                    zip_file.writestr(f'{zip_name}.{content_type}', file_content)
+                except Exception as e:
+                    # Log the error and continue to the next file
+                    logger.warning(f'Failed to download {url}: {e}')
+
+        zip_buffer.seek(0)
+
+        upload_path = f'jobs/{job_id}/archive.zip'
+        
+        zip_url = upload_file_to_gcs(zip_buffer, 'application/zip', upload_path)
+
+        db.update_download_job_status(
+            job_id, 'completed', file_name=f'{zip_name}.zip', result_url=zip_url
+        )
+
+    except Exception as e:
+        logger.error(f'Error in background zip task for job {job_id}: {e}')
+        db.update_download_job_status(job_id, 'failed', error=str(e))
