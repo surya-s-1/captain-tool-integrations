@@ -16,7 +16,7 @@ jira_client = JiraClient()
 logger = logging.getLogger(__name__)
 
 
-def create_on_jira(uid, project_id, version):
+def background_jira_creation(uid, project_id, version):
     try:
         db.update_version(
             project_id=project_id,
@@ -170,7 +170,7 @@ async def background_zip_task(
         zip_buffer.seek(0)
 
         upload_path = f'jobs/{job_id}/archive.zip'
-        
+
         zip_url = upload_file_to_gcs(zip_buffer, 'application/zip', upload_path)
 
         db.update_download_job_status(
@@ -179,4 +179,52 @@ async def background_zip_task(
 
     except Exception as e:
         logger.error(f'Error in background zip task for job {job_id}: {e}')
+        db.update_download_job_status(job_id, 'failed', error=str(e))
+
+
+async def background_zip_all_task(job_id: str, project_id: str, version: str):
+    try:
+        db.update_download_job_status(job_id, 'in_progress')
+
+        testcases = db.get_testcases(project_id, version)
+
+        datasets = [
+            {'testcase_id': tc.get('testcase_id'), 'urls': tc.get('datasets')}
+            for tc in testcases
+            if tc.get('datasets')
+        ]
+
+        zip_buffer = io.BytesIO()
+
+        zip_name = f'{version}-{project_id}'
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for data in datasets:
+                for url in data.get('urls'):
+                    if not url.startswith('gs://'):
+                        continue
+
+                    try:
+                        tc_id = data.get('testcase_id')
+                        file_content = get_file_from_gcs(url)
+                        content_type = url.split('.')[-1]
+
+                        zip_file.writestr(
+                            f'{tc_id}-{zip_name}.{content_type}', file_content
+                        )
+                    except Exception as e:
+                        # Log the error and continue to the next file
+                        logger.warning(f'Failed to download {url}: {e}')
+
+        zip_buffer.seek(0)
+
+        upload_path = f'jobs/{job_id}/archive.zip'
+
+        zip_url = upload_file_to_gcs(zip_buffer, 'application/zip', upload_path)
+
+        db.update_download_job_status(
+            job_id, 'completed', file_name=f'{zip_name}.zip', result_url=zip_url
+        )
+    except Exception as e:
+        logger.exception(f'Error in background zip task for job {job_id}: {e}')
         db.update_download_job_status(job_id, 'failed', error=str(e))

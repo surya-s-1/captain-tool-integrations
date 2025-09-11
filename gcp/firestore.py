@@ -212,6 +212,28 @@ class FirestoreDB:
 
         return job_ref.id
 
+    def create_download_all_job(
+        self, uid: str, project_id: str, version: str
+    ):
+        """
+        Creates a new document in the 'jobs' collection to track a download task.
+        """
+        job_ref = self.db.collection('jobs').document()
+        job_ref.set(
+            {
+                'project_id': project_id,
+                'version': version,
+                'testcase_id': 'all',
+                'uid': uid,
+                'job_id': job_ref.id,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'status': 'pending',
+                'created_at': firestore.SERVER_TIMESTAMP,
+            }
+        )
+
+        return job_ref.id
+
     def get_download_job(self, job_id: str):
         """
         Retrieves a download job document.

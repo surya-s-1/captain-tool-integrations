@@ -20,11 +20,18 @@ from auth import get_current_user
 from tools.jira.client import JiraClient
 
 from projects.models import ConnectProjectRequest
-from projects.functions import create_on_jira, background_zip_task
+from projects.background_functions import (
+    background_jira_creation,
+    background_zip_task,
+    background_zip_all_task,
+)
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
-from gcp.storage import upload_file_to_gcs, get_file_from_gcs  # New import for downloading files
+from gcp.storage import (
+    upload_file_to_gcs,
+    get_file_from_gcs,
+)  # New import for downloading files
 
 from google.cloud.workflows.executions_v1beta import (
     Execution,
@@ -299,7 +306,7 @@ def create_testcases_on_jira(
 
     uid = user.get('uid', None)
 
-    background_tasks.add_task(create_on_jira, uid, project_id, version)
+    background_tasks.add_task(background_jira_creation, uid, project_id, version)
 
     return 'OK'
 
@@ -376,7 +383,41 @@ async def submit_download_job(
         )
 
         return {'message': 'Download job started successfully', 'job_id': job_id}
-    
+
+    except Exception as e:
+        logger.exception(f'Error in submit_download_job: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to start download job.',
+        )
+
+
+@router.post('/v1/download/all/async', status_code=status.HTTP_202_ACCEPTED)
+async def submit_download_all_job(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    project_id: str = Body(..., embed=True),
+    version: str = Body(..., embed=True)
+):
+    '''
+    Starts an asynchronous job to download and zip datasets.
+    '''
+    try:
+        uid = user.get('uid', None)
+        job_id = db.create_download_all_job(uid, project_id, version)
+
+        if not job_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail='Failed to create download job.',
+            )
+
+        background_tasks.add_task(
+            background_zip_all_task, job_id, project_id, version
+        )
+
+        return {'message': 'Download job started successfully', 'job_id': job_id}
+
     except Exception as e:
         logger.exception(f'Error in submit_download_job: {e}')
         raise HTTPException(
@@ -412,12 +453,12 @@ async def get_download_status(job_id: str):
             zip_content = get_file_from_gcs(zip_url)
 
             headers = {
-                'Content-Disposition': f'attachment; filename={file_name}',
+                'Content-Disposition': f'attachment; filename="{file_name}"',
                 'Content-Type': 'application/zip',
             }
 
             return StreamingResponse(io.BytesIO(zip_content), headers=headers)
-        
+
         except Exception as e:
             logger.error(f'Failed to retrieve zip file for job {job_id}: {e}')
 
