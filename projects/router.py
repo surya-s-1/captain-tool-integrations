@@ -16,7 +16,7 @@ from auth import get_current_user
 from tools.jira.client import JiraClient
 
 from projects.models import ConnectProjectRequest
-from projects.functions import create_on_jira, create_datasets
+from projects.functions import create_on_jira
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
@@ -32,6 +32,7 @@ import google.oauth2.id_token as oauth2_id_token
 
 REQUIREMENTS_WORFLOW = os.getenv('REQUIREMENTS_WORFLOW')
 TESTCASE_CREATION_URL = os.getenv('TESTCASE_CREATION_URL')
+DATASET_TASKS_DISPATHER_URL = os.getenv('DATASET_TASKS_DISPATHER_URL')
 
 import logging
 logger = logging.getLogger(__name__)
@@ -263,7 +264,7 @@ def confirm_requirements(
                 'project_id': project_id,
                 'version': version,
             },
-            timeout=30,
+            timeout=600,
         )
 
         response.raise_for_status()
@@ -295,6 +296,51 @@ def create_testcases_on_jira(
     uid = user.get('uid', None)
 
     background_tasks.add_task(create_on_jira, uid, project_id, version)
-    background_tasks.add_task(create_datasets, project_id, version)
+
+    return 'OK'
+
+
+@router.post('/{project_id}/v/{version}/datasets/create')
+def create_datasets_for_testcases(
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+):
+    if not project_id or not version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
+
+    uid = user.get('uid', None)
+
+    try:
+        request = auth_requests.Request()
+        id_token = oauth2_id_token.fetch_id_token(request, DATASET_TASKS_DISPATHER_URL)
+
+        logging.info(f'Making request to {DATASET_TASKS_DISPATHER_URL}')
+
+        response = requests.post(
+            DATASET_TASKS_DISPATHER_URL,
+            headers={'Authorization': f'Bearer {id_token}'},
+            json={
+                'project_id': project_id,
+                'version': version,
+            },
+            timeout=900,
+        )
+
+        response.raise_for_status()
+
+        logging.info(
+            f'{DATASET_TASKS_DISPATHER_URL} responded with {response.status_code}'
+        )
+
+    except Exception as e:
+        logger.exception('Error when making API call to create datasets')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to create datasets: {str(e)}',
+        )
 
     return 'OK'

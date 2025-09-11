@@ -1,9 +1,4 @@
-import os
 import logging
-import requests
-
-import google.auth.transport.requests as auth_requests
-import google.oauth2.id_token as oauth2_id_token
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
@@ -14,9 +9,6 @@ sm = SecretManager()
 jira_client = JiraClient()
 
 logger = logging.getLogger(__name__)
-
-DATASET_TASKS_DISPATHER_URL = os.getenv('DATASET_TASKS_DISPATHER_URL')
-
 
 def create_on_jira(uid, project_id, version):
     try:
@@ -129,31 +121,3 @@ def create_on_jira(uid, project_id, version):
 
     except Exception as e:
         logger.exception(f'Error syncing test cases to Jira: {e}')
-
-def create_datasets(project_id, version):
-    try:
-        request = auth_requests.Request()
-        id_token = oauth2_id_token.fetch_id_token(request, DATASET_TASKS_DISPATHER_URL)
-
-        logging.info(
-            f'Making request to {DATASET_TASKS_DISPATHER_URL}'
-        )
-
-        response = requests.post(
-            DATASET_TASKS_DISPATHER_URL,
-            headers={'Authorization': f'Bearer {id_token}'},
-            json={
-                'project_id': project_id,
-                'version': version,
-            },
-            timeout=600,
-        )
-
-        response.raise_for_status()
-
-        logging.info(
-            f'{DATASET_TASKS_DISPATHER_URL} responded with {response.status_code}'
-        )
-
-    except Exception as e:
-        logger.exception('Error when making API call to create datasets')
