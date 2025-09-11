@@ -106,7 +106,7 @@ def create_on_jira(uid, project_id, version):
                         project_id,
                         version,
                         testcase_id,
-                        {'toolIssueLink': jira_link, 'created': 'SUCCESS'},
+                        {'toolIssueLink': jira_link, 'toolCreated': 'SUCCESS'},
                     )
 
                     found_match = True
@@ -114,7 +114,7 @@ def create_on_jira(uid, project_id, version):
 
             if not found_match:
                 db.update_testcase(
-                    project_id, version, testcase_id, {'created': 'FAILED'}
+                    project_id, version, testcase_id, {'toolCreated': 'FAILED'}
                 )
 
         db.update_version(project_id, version, {'status': 'COMPLETE_JIRA_SYNC'})
