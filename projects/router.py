@@ -427,10 +427,18 @@ async def submit_download_all_job(
 
 
 @router.get('/download/status/{job_id}')
-async def get_download_status(job_id: str):
+async def get_download_status(
+    user: Dict = Depends(get_current_user),
+    job_id: str = None
+):
     '''
     Checks the status of a download job. Returns the zip file if the job is completed.
     '''
+    if not job_id:
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail='Job ID is required.'
+        )
+
     job_data = db.get_download_job(job_id)
     if not job_data:
         raise HTTPException(
