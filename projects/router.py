@@ -57,10 +57,16 @@ router = APIRouter(tags=['Project Actions'])
 workflow_client = ExecutionsClient()
 
 
-@router.post('/connect')
-def access_project(
+@router.post(
+    '/connect',
+    description='Connects a user to a Jira project by either creating a new project entry or updating an existing one.',
+)
+def connect_jira_project_to_application(
     user: Dict = Depends(get_current_user), request: ConnectProjectRequest = None
 ):
+    '''
+    Connects a user to a Jira project by either creating a new project entry or updating an existing one.
+    '''
     if (
         not request
         or not request.tool
@@ -111,13 +117,19 @@ def access_project(
         )
 
 
-@router.post('/{project_id}/v/{version}/docs/upload')
-def upload_docs(
+@router.post(
+    '/{project_id}/v/{version}/docs/upload',
+    description='Uploads documentation files for a specific project version.',
+)
+def upload_documentation_for_project_latest_version(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
     files: List[UploadFile] = File([]),
 ):
+    '''
+    Uploads documentation files for a specific project version.
+    '''
     if not project_id or not version or not files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -183,13 +195,19 @@ def upload_docs(
         )
 
 
-@router.delete('/{project_id}/v/{version}/r/{req_id}')
-def delete_req(
+@router.delete(
+    '/{project_id}/v/{version}/r/{req_id}',
+    description='Marks a specific requirement as deleted for a given project version.',
+)
+def mark_requirement_deleted(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
     req_id: str = None,
 ):
+    '''
+    Marks a specific requirement as deleted for a given project version.
+    '''
     if not project_id or not version or not req_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -213,13 +231,19 @@ def delete_req(
         )
 
 
-@router.delete('/{project_id}/v/{version}/t/{tc_id}')
-def delete_tc(
+@router.delete(
+    '/{project_id}/v/{version}/t/{tc_id}',
+    description='Marks a specific test case as deleted for a given project version.',
+)
+def mark_testcase_deleted(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
     tc_id: str = None,
 ):
+    '''
+    Marks a specific test case as deleted for a given project version.
+    '''
     if not project_id or not version or not tc_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -246,12 +270,18 @@ def delete_tc(
         )
 
 
-@router.post('/{project_id}/v/{version}/requirements/confirm')
-def confirm_requirements(
+@router.post(
+    '/{project_id}/v/{version}/requirements/confirm',
+    description='Confirms the requirements for a project version and triggers the test case creation workflow.',
+)
+def confirm_requirements_trigger_testcase_creation(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
 ):
+    '''
+    Confirms the requirements for a project version and triggers the test case creation workflow.
+    '''
     if not project_id or not version:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -291,13 +321,19 @@ def confirm_requirements(
         )
 
 
-@router.post('/{project_id}/v/{version}/testcases/confirm')
-def create_testcases_on_jira(
+@router.post(
+    '/{project_id}/v/{version}/testcases/confirm',
+    description='Confirms test cases and initiates their creation in Jira as a background task.',
+)
+def confirm_create_testcases_on_jira(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
 ):
+    '''
+    Confirms test cases and initiates their creation in Jira as a background task.
+    '''
     if not project_id or not version:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -311,12 +347,18 @@ def create_testcases_on_jira(
     return 'OK'
 
 
-@router.post('/{project_id}/v/{version}/datasets/create')
+@router.post(
+    '/{project_id}/v/{version}/datasets/create',
+    description='Triggers the creation of datasets for test cases by calling an external workflow.',
+)
 def create_datasets_for_testcases(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
 ):
+    '''
+    Triggers the creation of datasets for test cases by calling an external workflow.
+    '''
     if not project_id or not version:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -357,8 +399,12 @@ def create_datasets_for_testcases(
     return 'OK'
 
 
-@router.post('/download/one', status_code=status.HTTP_202_ACCEPTED)
-async def submit_download_job(
+@router.post(
+    '/download/one',
+    status_code=status.HTTP_202_ACCEPTED,
+    description='Starts an asynchronous job to download and zip a specific testcase\'s dataset.',
+)
+async def initiate_download_dataset_for_one_testcase_job(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = Body(..., embed=True),
@@ -366,7 +412,7 @@ async def submit_download_job(
     testcase_id: str = Body(..., embed=True),
 ):
     '''
-    Starts an asynchronous job to download and zip datasets.
+    Starts an asynchronous job to download and zip a specific testcase's dataset.
     '''
     try:
         uid = user.get('uid', None)
@@ -392,12 +438,16 @@ async def submit_download_job(
         )
 
 
-@router.post('/download/all', status_code=status.HTTP_202_ACCEPTED)
-async def submit_download_all_job(
+@router.post(
+    '/download/all',
+    status_code=status.HTTP_202_ACCEPTED,
+    description='Starts an asynchronous job to download and zip datasets.',
+)
+async def initiate_download_datasets_for_all_testcases_job(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = Body(..., embed=True),
-    version: str = Body(..., embed=True)
+    version: str = Body(..., embed=True),
 ):
     '''
     Starts an asynchronous job to download and zip datasets.
@@ -412,9 +462,7 @@ async def submit_download_all_job(
                 detail='Failed to create download job.',
             )
 
-        background_tasks.add_task(
-            background_zip_all_task, job_id, project_id, version
-        )
+        background_tasks.add_task(background_zip_all_task, job_id, project_id, version)
 
         return {'message': 'Download job started successfully', 'job_id': job_id}
 
@@ -426,10 +474,12 @@ async def submit_download_all_job(
         )
 
 
-@router.get('/download/status/{job_id}')
-async def get_download_status(
-    user: Dict = Depends(get_current_user),
-    job_id: str = None
+@router.get(
+    '/download/status/{job_id}',
+    description='Checks the status of a download job. Returns the zip file if the job is completed.',
+)
+async def get_download_job_status(
+    user: Dict = Depends(get_current_user), job_id: str = None
 ):
     '''
     Checks the status of a download job. Returns the zip file if the job is completed.

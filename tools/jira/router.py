@@ -24,8 +24,15 @@ jira_client = JiraClient()
 router = APIRouter(tags=['Jira Integration'])
 
 
-@router.get('/status')
-async def jira_status(user: Dict = Depends(get_current_user)):
+@router.get(
+    '/status', description='Checks the connection status of the Jira user account.'
+)
+async def get_jira_user_account_connection_status(
+    user: Dict = Depends(get_current_user),
+):
+    '''
+    Checks the connection status of the Jira user account.
+    '''
     try:
         uid = user.get('uid', None)
         jira_connected = db.get_connection_status('jira', uid)
@@ -39,11 +46,13 @@ async def jira_status(user: Dict = Depends(get_current_user)):
         )
 
 
-@router.post('/connect')
-async def jira_connect(user: Dict = Depends(get_current_user)):
+@router.post(
+    '/connect',
+    description='Initiates the Jira OAuth 2.0 (3LO) authorization flow. Returns a redirect URL for the user to authorize the application.',
+)
+async def connect_jira_user_account_to_app(user: Dict = Depends(get_current_user)):
     '''
-    Initiates the Jira OAuth 2.0 (3LO) authorization flow.
-    Returns a redirect URL for the user to authorize the application.
+    Initiates the Jira OAuth 2.0 (3LO) authorization flow. Returns a redirect URL for the user to authorize the application.
     '''
     try:
         uid = user.get('uid', None)
@@ -68,11 +77,13 @@ async def jira_connect(user: Dict = Depends(get_current_user)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@router.get('/auth/callback')
+@router.get(
+    '/auth/callback',
+    description='Receives the authorization code from Jira, exchanges it for tokens, and stores them securely. Not meant to be called by users directly.',
+)
 async def jira_auth_callback(request: Request):
     '''
-    Receives the authorization code from Jira, exchanges it for tokens,
-    and stores them securely.
+    Receives the authorization code from Jira, exchanges it for tokens, and stores them securely.
     '''
     auth_code = request.query_params.get('code')
     state = request.query_params.get('state')
@@ -121,8 +132,11 @@ async def jira_auth_callback(request: Request):
         )
 
 
-@router.get('/projects/list')
-async def get_jira_projects(user: Dict = Depends(get_current_user)):
+@router.get(
+    '/projects/list',
+    description='Fetches the list of Jira projects for a connected user.',
+)
+async def get_jira_user_projects(user: Dict = Depends(get_current_user)):
     '''
     Fetches the list of Jira projects for a connected user.
     '''
@@ -147,9 +161,7 @@ async def get_jira_projects(user: Dict = Depends(get_current_user)):
             cloud_ids = jira_client.get_cloud_ids(access_token)
 
             if cloud_ids.status_code == 401:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED
-                )
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
         cloud_ids = [
             {'id': r['id'], 'name': r['name'], 'url': r['url']}
