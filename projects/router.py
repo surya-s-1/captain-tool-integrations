@@ -183,7 +183,7 @@ def upload_docs(
         )
 
 
-@router.delete('/{project_id}/v/{version}/r/{req_id}/delete')
+@router.delete('/{project_id}/v/{version}/r/{req_id}')
 def delete_req(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
@@ -213,7 +213,7 @@ def delete_req(
         )
 
 
-@router.delete('/{project_id}/v/{version}/t/{tc_id}/delete')
+@router.delete('/{project_id}/v/{version}/t/{tc_id}')
 def delete_tc(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
@@ -357,7 +357,7 @@ def create_datasets_for_testcases(
     return 'OK'
 
 
-@router.post('/v1/download/async', status_code=status.HTTP_202_ACCEPTED)
+@router.post('/download/one', status_code=status.HTTP_202_ACCEPTED)
 async def submit_download_job(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
@@ -392,7 +392,7 @@ async def submit_download_job(
         )
 
 
-@router.post('/v1/download/all/async', status_code=status.HTTP_202_ACCEPTED)
+@router.post('/download/all', status_code=status.HTTP_202_ACCEPTED)
 async def submit_download_all_job(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
@@ -426,7 +426,7 @@ async def submit_download_all_job(
         )
 
 
-@router.get('/v1/download/status/{job_id}')
+@router.get('/download/status/{job_id}')
 async def get_download_status(job_id: str):
     '''
     Checks the status of a download job. Returns the zip file if the job is completed.

@@ -20,7 +20,7 @@ app = FastAPI(
 )
 
 app.include_router(router=JiraRouter, prefix='/tools/jira')
-app.include_router(router=ProjectsRouter, prefix='/projects')
+app.include_router(router=ProjectsRouter, prefix='/projects/v1')
 
 
 app.add_middleware(
