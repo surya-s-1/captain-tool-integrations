@@ -132,7 +132,7 @@ def background_jira_creation(uid, project_id, version):
         logger.exception(f'Error syncing test cases to Jira: {e}')
 
 
-async def background_zip_task(
+def background_zip_task(
     job_id: str, project_id: str, version: str, testcase_id: str
 ):
     '''
@@ -182,7 +182,7 @@ async def background_zip_task(
         db.update_download_job_status(job_id, 'failed', error=str(e))
 
 
-async def background_zip_all_task(job_id: str, project_id: str, version: str):
+def background_zip_all_task(job_id: str, project_id: str, version: str):
     try:
         db.update_download_job_status(job_id, 'in_progress')
 
