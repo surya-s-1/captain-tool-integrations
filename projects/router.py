@@ -61,7 +61,7 @@ workflow_client = ExecutionsClient()
     '/connect',
     description='Connects a user to a Jira project by either creating a new project entry or updating an existing one.',
 )
-def connect_jira_project_to_application(
+def connect_project_to_application(
     user: Dict = Depends(get_current_user), request: ConnectProjectRequest = None
 ):
     '''
@@ -83,7 +83,7 @@ def connect_jira_project_to_application(
 
     try:
         project_id = db.find_project_id_by_details(
-            tool_name=request.tool,
+            tool_name=request.tool.lower(),
             site_domain=request.siteDomain,
             site_id=request.siteId,
             project_key=request.projectKey,
