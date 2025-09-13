@@ -118,6 +118,29 @@ class FirestoreDB:
             return doc.to_dict()
         return None
 
+    def get_version_details(self, project_id, version_id):
+        '''
+        Fetches a specific version document.
+        '''
+        doc_ref = self.db.document(f'projects/{project_id}/versions/{version_id}')
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
+
+    def get_requirements(self, project_id, version_id):
+        '''
+        Fetches all requirements for a given project and version.
+        '''
+        collection_ref = (
+            self.db.collection('projects')
+            .document(project_id)
+            .collection('versions')
+            .document(version_id)
+            .collection('requirements')
+        )
+        return [doc.to_dict() for doc in collection_ref.get()]
+
     def get_testcases(self, project_id, version_id):
         '''
         Fetches all test cases for a given project and version.
@@ -161,17 +184,12 @@ class FirestoreDB:
         )
         version_ref.update(update_details)
 
-    def update_requirement(self, project_id, version_id, req_id, update_details):
+    def update_requirement(self, project_id, version, req_id, update_details):
         '''
         Updates a specific test case document with its new tool details.
         '''
-        doc_ref = (
-            self.db.collection('projects')
-            .document(project_id)
-            .collection('versions')
-            .document(version_id)
-            .collection('requirements')
-            .document(req_id)
+        doc_ref = self.db.document(
+            'projects', project_id, 'versions', version, 'requirements', req_id
         )
         doc_ref.update(update_details)
 
@@ -212,9 +230,7 @@ class FirestoreDB:
 
         return job_ref.id
 
-    def create_download_all_job(
-        self, uid: str, project_id: str, version: str
-    ):
+    def create_download_all_job(self, uid: str, project_id: str, version: str):
         """
         Creates a new document in the 'jobs' collection to track a download task.
         """
@@ -243,7 +259,12 @@ class FirestoreDB:
         return job_doc.to_dict() if job_doc.exists else None
 
     def update_download_job_status(
-        self, job_id: str, status: str, file_name: str = None, result_url: str = None, error: str = None
+        self,
+        job_id: str,
+        status: str,
+        file_name: str = None,
+        result_url: str = None,
+        error: str = None,
     ):
         """
         Updates the status and optional results or errors for a download job.

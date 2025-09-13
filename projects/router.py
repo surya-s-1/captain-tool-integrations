@@ -109,11 +109,40 @@ def connect_project_to_application(
 
         return f'Connected successfully.'
 
+    except HTTPException as e:
+        raise e
+    
     except Exception as e:
         logger.exception('Failed to connect to project.')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to connect: {str(e)}',
+        )
+
+
+@router.get(
+    '/{project_id}/details',
+    description='Gets the details of a project by project id including its lates version, tool (ex. Jira, Azure DevOps), siteId(Unique project id in the rool), siteDomain(Projects domain in the tool), etc.'
+)
+def get_project_details(project_id: str = None):
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID is required.',
+        )
+
+    try:
+        project_data = db.get_project_details(project_id)
+
+        project_data.pop('uids', None)
+
+        return project_data
+
+    except Exception as e:
+        logger.exception('Failed to get project details.')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to get project details: {str(e)}',
         )
 
 
@@ -185,6 +214,9 @@ def upload_documentation_for_project_latest_version(
         print(f'Workflow execution started successfully. Execution ID: {response.name}')
 
         return f'Files uploaded successfully.'
+    
+    except HTTPException as e:
+        raise e
 
     except Exception as e:
         logger.exception('Failed to upload files.')
@@ -215,6 +247,14 @@ def mark_requirement_deleted(
         )
 
     try:
+        version_details = db.get_version_details(project_id, version)
+
+        if version_details.get('status', '') != 'CONFIRM_REQ_EXTRACT':
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail='You will be allowed to delete requirements only in confirm requirements state.',
+            )
+
         db.update_requirement(
             project_id,
             version,
@@ -222,6 +262,9 @@ def mark_requirement_deleted(
             {'deleted': True, 'deleted_by': user.get('uid', '')},
         )
         return f'Requirement {req_id} marked as deleted successfully.'
+
+    except HTTPException as e:
+        raise e
 
     except Exception as e:
         logger.exception('Failed to delete requirement.')
@@ -250,6 +293,14 @@ def mark_testcase_deleted(
             detail='Project ID, version and tc_id are required.',
         )
 
+    version_details = db.get_version_details(project_id, version)
+
+    if version_details.get('status', '') != 'CONFIRM_TESTCASES':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='You will be allowed to delete testcases only in confirm testcases state.',
+        )
+
     try:
         db.update_testcase(
             project_id,
@@ -260,7 +311,11 @@ def mark_testcase_deleted(
                 'deleted_by': user.get('uid', ''),
             },
         )
+
         return f'Test case {tc_id} marked as deleted successfully.'
+
+    except HTTPException as e:
+        raise e
 
     except Exception as e:
         logger.exception('Failed to delete test case.')
@@ -274,7 +329,7 @@ def mark_testcase_deleted(
     '/{project_id}/v/{version}/requirements/confirm',
     description='Confirms the requirements for a project version and triggers the test case creation workflow.',
 )
-def confirm_requirements_trigger_testcase_creation(
+def confirm_requirements_and_trigger_testcase_creation(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
@@ -313,8 +368,10 @@ def confirm_requirements_trigger_testcase_creation(
         logging.info(f'{TESTCASE_CREATION_URL} responded with {response.status_code}')
 
         return 'Requirements confirmed successfully.'
+
     except Exception as e:
         logger.exception('Failed to confirm requirements.')
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to confirm requirements: {str(e)}',
@@ -404,7 +461,7 @@ def create_datasets_for_testcases(
     status_code=status.HTTP_202_ACCEPTED,
     description='Starts an asynchronous job to download and zip a specific testcase\'s dataset.',
 )
-async def initiate_download_dataset_for_one_testcase_job(
+async def initiate_download_dataset_job_for_one_testcase(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = Body(..., embed=True),
@@ -429,6 +486,9 @@ async def initiate_download_dataset_for_one_testcase_job(
         )
 
         return {'message': 'Download job started successfully', 'job_id': job_id}
+    
+    except HTTPException as e:
+        raise e
 
     except Exception as e:
         logger.exception(f'Error in submit_download_job: {e}')
@@ -443,7 +503,7 @@ async def initiate_download_dataset_for_one_testcase_job(
     status_code=status.HTTP_202_ACCEPTED,
     description='Starts an asynchronous job to download and zip datasets.',
 )
-async def initiate_download_datasets_for_all_testcases_job(
+async def initiate_download_dataset_job_for_all_testcases(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = Body(..., embed=True),
@@ -465,6 +525,9 @@ async def initiate_download_datasets_for_all_testcases_job(
         background_tasks.add_task(background_zip_all_task, job_id, project_id, version)
 
         return {'message': 'Download job started successfully', 'job_id': job_id}
+    
+    except HTTPException as e:
+        raise e
 
     except Exception as e:
         logger.exception(f'Error in submit_download_job: {e}')
@@ -533,3 +596,87 @@ async def get_download_job_status(
         )
 
     return {'status': status_str}
+
+@router.get(
+    '/{project_id}/v/{version}/requirements/list',
+    description='Fetches requirements for a given project version, optionally filtered by source or regulation.',
+)
+async def get_requirements_filtered(
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+    source_filename: str = None,
+    regulation: str = None,
+):
+    '''
+    Fetches requirements for a given project version, optionally filtered by source or regulation.
+    '''
+    if not project_id or not version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
+
+    try:
+        requirements = db.get_requirements(project_id, version)
+
+        if source_filename:
+            requirements = [
+                req
+                for req in requirements
+                if any(s.get('filename') == source_filename for s in req.get('sources', []))
+            ]
+
+        if regulation:
+            requirements = [
+                req
+                for req in requirements
+                if any(
+                    r.get('regulation') == regulation for r in req.get('regulations', [])
+                )
+            ]
+
+        return requirements
+
+    except Exception as e:
+        logger.exception(f'Failed to retrieve requirements: {e}')
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to retrieve requirements: {str(e)}',
+        )
+
+
+@router.get(
+    '/{project_id}/v/{version}/testcases/list',
+    description='Fetches testcases for a given project version, optionally filtered by source or regulation.',
+)
+async def get_testcases_filtered(
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+    requirement_id: str = None
+):
+    '''
+    Fetches requirements for a given project version, optionally filtered by source or regulation.
+    '''
+    if not project_id or not version or not requirement_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
+
+    try:
+        testcases = db.get_testcases(project_id, version)
+
+        testcases = [tc for tc in testcases if tc.get('requirement_id') == requirement_id]
+
+        return testcases
+
+    except Exception as e:
+        logger.exception(f'Failed to retrieve requirements: {e}')
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to retrieve requirements: {str(e)}',
+        )
