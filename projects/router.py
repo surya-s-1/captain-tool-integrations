@@ -111,7 +111,7 @@ def connect_project_to_application(
 
     except HTTPException as e:
         raise e
-    
+
     except Exception as e:
         logger.exception('Failed to connect to project.')
         raise HTTPException(
@@ -122,9 +122,9 @@ def connect_project_to_application(
 
 @router.get(
     '/{project_id}/details',
-    description='Gets the details of a project by project id including its lates version, tool (ex. Jira, Azure DevOps), siteId(Unique project id in the rool), siteDomain(Projects domain in the tool), etc.'
+    description='Gets the details of a project by project id including its lates version, tool (ex. Jira, Azure DevOps), siteId(Unique project id in the rool), siteDomain(Projects domain in the tool), etc.',
 )
-def get_project_details(project_id: str = None):
+def get_project_details(user: Dict = Depends(get_current_user), project_id: str = None):
     if not project_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -214,7 +214,7 @@ def upload_documentation_for_project_latest_version(
         print(f'Workflow execution started successfully. Execution ID: {response.name}')
 
         return f'Files uploaded successfully.'
-    
+
     except HTTPException as e:
         raise e
 
@@ -486,7 +486,7 @@ async def initiate_download_dataset_job_for_one_testcase(
         )
 
         return {'message': 'Download job started successfully', 'job_id': job_id}
-    
+
     except HTTPException as e:
         raise e
 
@@ -525,7 +525,7 @@ async def initiate_download_dataset_job_for_all_testcases(
         background_tasks.add_task(background_zip_all_task, job_id, project_id, version)
 
         return {'message': 'Download job started successfully', 'job_id': job_id}
-    
+
     except HTTPException as e:
         raise e
 
@@ -597,6 +597,7 @@ async def get_download_job_status(
 
     return {'status': status_str}
 
+
 @router.get(
     '/{project_id}/v/{version}/requirements/list',
     description='Fetches requirements for a given project version, optionally filtered by source or regulation.',
@@ -624,7 +625,9 @@ async def get_requirements_filtered(
             requirements = [
                 req
                 for req in requirements
-                if any(s.get('filename') == source_filename for s in req.get('sources', []))
+                if any(
+                    s.get('filename') == source_filename for s in req.get('sources', [])
+                )
             ]
 
         if regulation:
@@ -632,7 +635,8 @@ async def get_requirements_filtered(
                 req
                 for req in requirements
                 if any(
-                    r.get('regulation') == regulation for r in req.get('regulations', [])
+                    r.get('regulation') == regulation
+                    for r in req.get('regulations', [])
                 )
             ]
 
@@ -655,7 +659,7 @@ async def get_testcases_filtered(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
-    requirement_id: str = None
+    requirement_id: str = None,
 ):
     '''
     Fetches requirements for a given project version, optionally filtered by source or regulation.
@@ -669,7 +673,9 @@ async def get_testcases_filtered(
     try:
         testcases = db.get_testcases(project_id, version)
 
-        testcases = [tc for tc in testcases if tc.get('requirement_id') == requirement_id]
+        testcases = [
+            tc for tc in testcases if tc.get('requirement_id') == requirement_id
+        ]
 
         return testcases
 
