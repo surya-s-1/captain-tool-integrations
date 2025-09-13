@@ -108,6 +108,16 @@ class FirestoreDB:
 
         return None
 
+    def get_connected_projects(self, uid):
+        collection_ref = self.db.collection('projects')
+        query = (
+            collection_ref.where('uids', 'array_contains', uid)
+        )
+
+        docs = query.get()
+
+        return [doc.to_dict() for doc in docs]
+
     def get_project_details(self, project_id):
         '''
         Fetches a project document to retrieve key details like the Jira project key.

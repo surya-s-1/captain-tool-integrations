@@ -121,6 +121,21 @@ def connect_project_to_application(
 
 
 @router.get(
+    '/connected',
+    description='Gets the projects that a user is connected to and has access to.'
+)
+def get_connected_projects(user: Dict = Depends(get_current_user)):
+    uid = user.get('uid', '')
+
+    connected = []
+    for project in db.get_connected_projects(uid):
+        project.pop('uids', None)
+        connected.append(project)
+
+    return connected
+
+
+@router.get(
     '/{project_id}/details',
     description='Gets the details of a project by project id including its lates version, tool (ex. Jira, Azure DevOps), siteId(Unique project id in the rool), siteDomain(Projects domain in the tool), etc.',
 )
