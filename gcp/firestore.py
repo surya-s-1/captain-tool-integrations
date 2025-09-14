@@ -78,7 +78,7 @@ class FirestoreDB:
             }
         )
 
-        versions_doc_ref = project_doc_ref.collection('versions').document()
+        versions_doc_ref = project_doc_ref.collection('versions').document('v1')
         versions_doc_ref.set(
             {
                 'version': versions_doc_ref.id,
