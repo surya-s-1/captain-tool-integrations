@@ -91,7 +91,7 @@ def connect_project_to_application(
 
         if not project_id:
             db.create_project(
-                tool_name=request.tool,
+                tool_name=request.tool.lower(),
                 site_id=request.siteId,
                 site_domain=request.siteDomain,
                 project_key=request.projectKey,
@@ -99,7 +99,7 @@ def connect_project_to_application(
             )
 
             project_id = db.find_project_id_by_details(
-                tool_name=request.tool,
+                tool_name=request.tool.lower(),
                 site_domain=request.siteDomain,
                 site_id=request.siteId,
                 project_key=request.projectKey,
