@@ -129,6 +129,26 @@ class JiraClient:
 
         return projects
 
+    def get_issue_types(self, uid, cloud_id):
+        access_token = self.get_usage_access_token(uid)
+        if not access_token:
+            raise Exception('Access token not found')
+
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+        }
+
+        meta_url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issuetype'
+        meta_resp = requests.get(meta_url, headers=headers)
+        meta_resp.raise_for_status()
+        meta_data = meta_resp.json()
+
+        issue_types = [m.get('name') for m in meta_data]
+
+        return issue_types
+
     def create_bulk_requirements(self, uid, cloud_id, project_key, requirements):
         access_token = self.get_usage_access_token(uid)
         if not access_token:
@@ -140,6 +160,18 @@ class JiraClient:
             'Accept': 'application/json',
             'Content-Type': 'application/json',
         }
+
+        issue_types = self.get_issue_types(uid, cloud_id)
+        issue_type_selected = None
+
+        if 'Story' in issue_types:
+            issue_type_selected = 'Story'
+
+        if 'Task' in issue_types:
+            issue_type_selected = 'Task'
+
+        if not issue_type_selected:
+            raise Exception('No valid issue types found')
 
         issue_updates = []
         for requirement in requirements:
@@ -201,18 +233,31 @@ class JiraClient:
         self, uid, cloud_id, project_key, requirement_key_mapping, testcases
     ):
         '''
-        Constructs a bulk payload and creates multiple testcases as tasks in Jira.
+        Constructs a bulk payload and creates multiple testcases as tasks or sub-tasks in Jira,
+        depending on project configuration.
         '''
         access_token = self.get_usage_access_token(uid)
         if not access_token:
             raise Exception('Access token not found')
 
-        url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue/bulk'
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Accept': 'application/json',
             'Content-Type': 'application/json',
         }
+
+        issue_types = self.get_issue_types(uid, cloud_id)
+
+        subtask = None
+
+        if 'Sub-task' in issue_types:
+            subtask = 'Sub-task'
+
+        if 'Sub-Task' in issue_types:
+            subtask = 'Sub-Task'
+
+        if 'Subtask' in issue_types:
+            subtask = 'Subtask'
 
         issue_updates = []
         for testcase in testcases:
@@ -225,8 +270,8 @@ class JiraClient:
 
             acceptance_criteria = testcase.get('acceptance_criteria', '')
 
-            # Build acceptance criteria into the description (if custom field not used)
             description_text = testcase.get('description', '')
+
             if acceptance_criteria:
                 description_text += f'\n\n*Acceptance Criteria:*\n{acceptance_criteria}'
 
@@ -244,38 +289,43 @@ class JiraClient:
                                 'type': 'paragraph',
                                 'content': [
                                     {
-                                        'text': description_text,
+                                        'text': description_text or "",
                                         'type': 'text',
                                     }
                                 ],
                             }
                         ],
                     },
-                    'issuetype': {'name': 'Sub-task'},
+                    'issuetype': { 'name': 'Task' },
                     'priority': {'name': testcase.get('priority', 'Medium')},
                     'labels': [
-                        'AI_Generated',
-                        'Created_by_Captain',
-                        'Testcase',
-                        testcase.get('testcase_id'),
-                    ],
+                            'AI_Generated',
+                            'Created_by_Captain',
+                            'Testcase',
+                            testcase.get('testcase_id'),
+                            testcase.get('requirement_id'),
+                        ]
                 }
             }
 
-            if parent_story_key:
-                issue_payload['fields']['parent']['key'] = parent_story_key
+            if subtask and parent_story_key:
+                issue_payload['fields']['parent'] = {}
+                issue_payload['fields']['parent'] = {'key': parent_story_key}
+                issue_payload['fields']['issuetype']['name'] = subtask
+                del issue_payload['fields']['priority']
+
 
             issue_updates.append(issue_payload)
 
+        url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue/bulk'
         payload = {'issueUpdates': issue_updates}
-
         response = requests.post(url, headers=headers, data=json.dumps(payload))
+        response.raise_for_status()
+
         if response.status_code == 401:
             print('Access token expired, attempting to refresh...')
-
             access_token = self.get_usage_access_token(uid, new_set=True)
             headers['Authorization'] = f'Bearer {access_token}'
-
             response = requests.post(url, headers=headers, data=json.dumps(payload))
             response.raise_for_status()
 
