@@ -251,7 +251,7 @@ class JiraClient:
                             }
                         ],
                     },
-                    'issuetype': {'name': 'Task'},
+                    'issuetype': {'name': 'Sub-task'},
                     'priority': {'name': testcase.get('priority', 'Medium')},
                     'labels': [
                         'AI_Generated',
