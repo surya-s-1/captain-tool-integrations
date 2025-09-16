@@ -50,10 +50,6 @@ def background_creation_on_tool(uid, project_id, version):
         requirements = [req for req in requirements if not req.get('deleted')]
         requirements = [req for req in requirements if req.get('toolCreated') != 'SUCCESS']
 
-        if not requirements:
-            logger.info('No requirements found to sync.')
-            return 'No requirements found to sync.'
-
         # # 1. Create in batches of 40
         batch_size = 40
 
@@ -128,7 +124,7 @@ def background_creation_on_tool(uid, project_id, version):
 
                 requirement_key_mapping[requirement_id] = ''
 
-                db.update_testcase(
+                db.update_requirement(
                     project_id, version, requirement_id, {'toolCreated': 'FAILED'}
                 )
 
@@ -147,10 +143,6 @@ def background_creation_on_tool(uid, project_id, version):
         testcases = db.get_testcases(project_id, version)
         testcases = [tc for tc in testcases if not tc.get('deleted')]
         testcases = [tc for tc in testcases if tc.get('toolCreated') != 'SUCCESS']
-
-        if not testcases:
-            logger.info('No test cases found to sync.')
-            return 'No test cases found to sync.'
 
         for i in range(0, len(testcases), batch_size):
             batch = testcases[i : i + batch_size]
