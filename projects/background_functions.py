@@ -111,7 +111,7 @@ def background_creation_on_tool(uid, project_id, version):
                     tool_key = issue.get('key', '')
                     tool_link = issue.get('url', '')
 
-                    db.update_testcase(
+                    db.update_requirement(
                         project_id,
                         version,
                         requirement_id,

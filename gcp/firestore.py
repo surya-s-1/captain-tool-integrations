@@ -207,13 +207,8 @@ class FirestoreDB:
         '''
         Updates a specific test case document with its new tool details.
         '''
-        doc_ref = (
-            self.db.collection('projects')
-            .document(project_id)
-            .collection('versions')
-            .document(version_id)
-            .collection('testcases')
-            .document(testcase_id)
+        doc_ref = self.db.document(
+            'projects', project_id, 'versions', version_id, 'testcases', testcase_id
         )
         doc_ref.update(update_details)
 
