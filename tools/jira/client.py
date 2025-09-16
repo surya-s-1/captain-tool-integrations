@@ -4,6 +4,7 @@ import os
 from urllib.parse import urlencode
 
 import logging
+
 JIRA_CLIENT_ID = os.getenv('JIRA_CLIENT_ID')
 JIRA_CLIENT_SECRET = os.getenv('JIRA_CLIENT_SECRET')
 JIRA_REDIRECT_URI = os.getenv('JIRA_REDIRECT_URI')
@@ -82,10 +83,11 @@ class JiraClient:
             response = requests.post(url, headers=headers, data=json.dumps(data))
             response.raise_for_status()
             return response.json()
-        
+
         except requests.exceptions.RequestException as e:
             logger.exception('Error refreshing access token.')
             raise
+
     def get_cloud_ids(self, access_token):
         '''
         Fetches the user's cloud ID from the Atlassian platform.
@@ -127,9 +129,79 @@ class JiraClient:
 
         return projects
 
-    def create_bulk_issues(self, uid, cloud_id, project_key, testcases):
+    def create_bulk_requirements(self, uid, cloud_id, project_key, requirements):
+        access_token = self.get_usage_access_token(uid)
+        if not access_token:
+            raise Exception('Access token not found')
+
+        url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue/bulk'
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+        }
+
+        issue_updates = []
+        for requirement in requirements:
+            if (
+                not requirement.get('requirement_id')
+                or not requirement.get('requirement_title')
+                or not requirement.get('requirement')
+            ):
+                continue
+
+            description_text = requirement.get('requirement', '')
+
+            issue_payload = {
+                'fields': {
+                    'project': {'key': project_key},
+                    'summary': requirement.get('requirement_title'),
+                    'description': {
+                        'type': 'doc',
+                        'version': 1,
+                        'content': [
+                            {
+                                'type': 'paragraph',
+                                'content': [
+                                    {
+                                        'text': description_text,
+                                        'type': 'text',
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    'issuetype': {'name': 'Task'},
+                    'priority': {'name': requirement.get('priority', 'Medium')},
+                    'labels': [
+                        'AI_Generated',
+                        'Created_by_Captain',
+                        'Requirement',
+                        requirement.get('requirement_id'),
+                    ],
+                }
+            }
+            issue_updates.append(issue_payload)
+
+        payload = {'issueUpdates': issue_updates}
+
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        if response.status_code == 401:
+            print('Access token expired, attempting to refresh...')
+
+            access_token = self.get_usage_access_token(uid, new_set=True)
+            headers['Authorization'] = f'Bearer {access_token}'
+
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            response.raise_for_status()
+
+        return response.json()
+
+    def create_bulk_testcases(
+        self, uid, cloud_id, project_key, requirement_key_mapping, testcases
+    ):
         '''
-        Constructs a bulk payload and creates multiple issues in Jira.
+        Constructs a bulk payload and creates multiple testcases as tasks in Jira.
         '''
         access_token = self.get_usage_access_token(uid)
         if not access_token:
@@ -158,6 +230,8 @@ class JiraClient:
             if acceptance_criteria:
                 description_text += f'\n\n*Acceptance Criteria:*\n{acceptance_criteria}'
 
+            parent_story_key = requirement_key_mapping.get(testcase.get('requirement_id'))
+
             issue_payload = {
                 'fields': {
                     'project': {'key': project_key},
@@ -177,15 +251,20 @@ class JiraClient:
                             }
                         ],
                     },
-                    'issuetype': { 'name': 'Task' },
-                    'priority': { 'name': testcase.get('priority', 'Medium') },
+                    'issuetype': {'name': 'Task'},
+                    'priority': {'name': testcase.get('priority', 'Medium')},
                     'labels': [
                         'AI_Generated',
                         'Created_by_Captain',
+                        'Testcase',
                         testcase.get('testcase_id'),
                     ],
                 }
             }
+
+            if parent_story_key:
+                issue_payload['fields']['parent']['key'] = parent_story_key
+
             issue_updates.append(issue_payload)
 
         payload = {'issueUpdates': issue_updates}
@@ -255,8 +334,8 @@ class JiraClient:
 
                 issue_url = f'{cloud_domain}/browse/{issue_key}'
 
-                issues.append({'url': issue_url, 'labels': labels})
-            
+                issues.append({'key': issue_key, 'url': issue_url, 'labels': labels})
+
             total = query_result.get('total', 0)
             fetched += len(current_issues)
             start_at += len(current_issues)
@@ -285,5 +364,7 @@ class JiraClient:
             tokens = json.loads(tokens_json)
             return tokens['access_token']
         except Exception as e:
-            logger.exception(f'Error getting or refreshing Jira access token for user {uid}.')
+            logger.exception(
+                f'Error getting or refreshing Jira access token for user {uid}.'
+            )
             raise

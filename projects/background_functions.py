@@ -16,51 +16,54 @@ jira_client = JiraClient()
 logger = logging.getLogger(__name__)
 
 
-def background_jira_creation(uid, project_id, version):
+def background_creation_on_tool(uid, project_id, version):
     try:
         db.update_version(
             project_id=project_id,
             version=version,
             update_details={
-                'status': 'START_JIRA_CREATION',
+                'status': 'START_REQ_CREATION_ON_TOOL',
                 'testcases_confirmed_by': uid,
             },
         )
-
-        testcases = db.get_testcases(project_id, version)
-        testcases = [tc for tc in testcases if not tc.get('deleted')]
-        testcases = [tc for tc in testcases if tc.get('created') != 'SUCCESS']
-
-        if not testcases:
-            logger.info('No test cases found to sync.')
-            return 'No test cases found to sync.'
 
         project_details = db.get_project_details(project_id)
 
         if (
             not project_details
             or not project_details.get('toolSiteId')
+            or not project_details.get('toolSiteDomain')
             or not project_details.get('toolProjectKey')
         ):
             db.update_version(
                 project_id=project_id,
                 version=version,
-                update_details={'status': 'ERR_JIRA_CREATION'},
+                update_details={'status': 'ERR_REQ_CREATION_ON_TOOL'},
             )
             return
 
-        cloud_id = project_details.get('toolSiteId')
-        cloud_domain = project_details.get('toolSiteDomain')
-        project_key = project_details.get('toolProjectKey')
+        tool_site_id = project_details.get('toolSiteId')
+        tool_site_domain = project_details.get('toolSiteDomain')
+        tool_project_key = project_details.get('toolProjectKey')
 
-        # # 1. Create in batches of 30
+        requirements = db.get_requirements(project_id, version)
+        requirements = [req for req in requirements if not req.get('deleted')]
+        requirements = [req for req in requirements if req.get('toolCreated') != 'SUCCESS']
+
+        if not requirements:
+            logger.info('No requirements found to sync.')
+            return 'No requirements found to sync.'
+
+        # # 1. Create in batches of 40
         batch_size = 40
 
-        for i in range(0, len(testcases), batch_size):
-            batch = testcases[i : i + batch_size]
+        for i in range(0, len(requirements), batch_size):
+            batch = requirements[i : i + batch_size]
 
             try:
-                jira_client.create_bulk_issues(uid, cloud_id, project_key, batch)
+                jira_client.create_bulk_requirements(
+                    uid, tool_site_id, tool_project_key, batch
+                )
 
             except Exception as e:
                 logger.exception(f'Error creating batch of test cases: {e}')
@@ -68,19 +71,18 @@ def background_jira_creation(uid, project_id, version):
         db.update_version(
             project_id=project_id,
             version=version,
-            update_details={'status': 'COMPLETE_JIRA_CREATION'},
+            update_details={'status': 'COMPLETE_REQ_CREATION_ON_TOOL'},
         )
 
         db.update_version(
             project_id=project_id,
             version=version,
-            update_details={'status': 'START_JIRA_SYNC'},
+            update_details={'status': 'START_REQ_SYNC_WITH_TOOL'},
         )
 
-        # 2. Get all issues from Jira with the label Created_by_Captain
         try:
             jira_issues = jira_client.search_issues_by_label(
-                uid, cloud_domain, cloud_id, 'Created_by_Captain'
+                uid, tool_site_domain, tool_site_id, 'Created_by_Captain'
             )
 
         except Exception as e:
@@ -88,14 +90,110 @@ def background_jira_creation(uid, project_id, version):
             db.update_version(
                 project_id=project_id,
                 version=version,
-                update_details={'status': 'ERR_JIRA_SYNC'},
+                update_details={'status': 'ERR_REQ_SYNC_WITH_TOOL'},
             )
             return
 
-        for testcase in testcases:
-            testcase_id = testcase.get('testcase_id')
+        requirement_key_mapping = {}
 
-            if not testcase_id:
+        for requirement in requirements:
+            requirement_id = requirement.get('requirement_id')
+
+            if not requirement_id:
+                continue
+
+            found_match = False
+
+            for issue in jira_issues:
+                labels = issue.get('labels', [])
+
+                if requirement_id in labels:
+                    tool_key = issue.get('key', '')
+                    tool_link = issue.get('url', '')
+
+                    db.update_testcase(
+                        project_id,
+                        version,
+                        requirement_id,
+                        {'toolIssueKey': tool_key, 'toolIssueLink': tool_link, 'toolCreated': 'SUCCESS'},
+                    )
+
+                    found_match = True
+
+                    requirement_key_mapping[requirement_id] = tool_key
+
+                    break
+
+            if not found_match:
+
+                requirement_key_mapping[requirement_id] = ''
+
+                db.update_testcase(
+                    project_id, version, requirement_id, {'toolCreated': 'FAILED'}
+                )
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'COMPLETE_REQ_SYNC_WITH_TOOL'},
+        )
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'START_TC_CREATION_ON_TOOL'},
+        )
+
+        testcases = db.get_testcases(project_id, version)
+        testcases = [tc for tc in testcases if not tc.get('deleted')]
+        testcases = [tc for tc in testcases if tc.get('toolCreated') != 'SUCCESS']
+
+        if not testcases:
+            logger.info('No test cases found to sync.')
+            return 'No test cases found to sync.'
+
+        for i in range(0, len(testcases), batch_size):
+            batch = testcases[i : i + batch_size]
+
+            try:
+                jira_client.create_bulk_testcases(
+                    uid, tool_site_id, tool_project_key, requirement_key_mapping, batch
+                )
+
+            except Exception as e:
+                logger.exception(f'Error creating batch of test cases: {e}')
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'COMPLETE_TC_CREATION_ON_TOOL'},
+        )
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'START_TC_SYNC_WITH_TOOL'},
+        )
+
+        # 2. Get all issues from Jira with the label Created_by_Captain
+        try:
+            jira_issues = jira_client.search_issues_by_label(
+                uid, tool_site_domain, tool_site_id, 'Created_by_Captain'
+            )
+
+        except Exception as e:
+            logger.exception(f'Error getting issues from Jira: {e}')
+            db.update_version(
+                project_id=project_id,
+                version=version,
+                update_details={'status': 'ERR_TC_SYNC_WITH_TOOL'},
+            )
+            return
+
+        for requirement in testcases:
+            requirement_id = requirement.get('testcase_id')
+
+            if not requirement_id:
                 continue
 
             found_match = False
@@ -104,18 +202,15 @@ def background_jira_creation(uid, project_id, version):
             for issue in jira_issues:
                 labels = issue.get('labels', [])
 
-                print(
-                    'testcase_id in labels', testcase_id in labels, testcase_id, labels
-                )
-
-                if testcase_id in labels:
-                    jira_link = issue.get('url', '')
+                if requirement_id in labels:
+                    tool_key = issue.get('key', '')
+                    tool_link = issue.get('url', '')
 
                     db.update_testcase(
                         project_id,
                         version,
-                        testcase_id,
-                        {'toolIssueLink': jira_link, 'toolCreated': 'SUCCESS'},
+                        requirement_id,
+                        {'toolIssueKey': tool_key, 'toolIssueLink': tool_link, 'toolCreated': 'SUCCESS'},
                     )
 
                     found_match = True
@@ -123,18 +218,20 @@ def background_jira_creation(uid, project_id, version):
 
             if not found_match:
                 db.update_testcase(
-                    project_id, version, testcase_id, {'toolCreated': 'FAILED'}
+                    project_id, version, requirement_id, {'toolCreated': 'FAILED'}
                 )
 
-        db.update_version(project_id, version, {'status': 'COMPLETE_JIRA_SYNC'})
+        db.update_version(
+            project_id, 
+            version, 
+            {'status': 'COMPLETE_TC_SYNC_WITH_TOOL'}
+        )
 
     except Exception as e:
         logger.exception(f'Error syncing test cases to Jira: {e}')
 
 
-def background_zip_task(
-    job_id: str, project_id: str, version: str, testcase_id: str
-):
+def background_zip_task(job_id: str, project_id: str, version: str, testcase_id: str):
     '''
     Background task to download GCS files and zip them.
     The result is stored as a blob in the job document in Firestore.
