@@ -171,7 +171,7 @@ class JiraClient:
                             }
                         ],
                     },
-                    'issuetype': {'name': 'Task'},
+                    'issuetype': {'name': 'Story'},
                     'priority': {'name': requirement.get('priority', 'Medium')},
                     'labels': [
                         'AI_Generated',
