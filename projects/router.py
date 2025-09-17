@@ -416,8 +416,8 @@ def update_testcase(
 
     uid = user.get('uid', None)
 
-    request = auth_requests.Request()
-    id_token = oauth2_id_token.fetch_id_token(request, TESTCASE_ENHANCER_URL)
+    auth_request = auth_requests.Request()
+    id_token = oauth2_id_token.fetch_id_token(auth_request, TESTCASE_ENHANCER_URL)
 
     try:
         response = requests.post(
