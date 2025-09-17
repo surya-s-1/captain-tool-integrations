@@ -19,7 +19,7 @@ from starlette.responses import StreamingResponse
 from auth import get_current_user
 from tools.jira.client import JiraClient
 
-from projects.models import ConnectProjectRequest
+from projects.models import ConnectProjectRequest, UpdateTestCaseRequest
 from projects.background_functions import (
     background_creation_on_tool,
     background_zip_task,
@@ -43,6 +43,7 @@ import google.oauth2.id_token as oauth2_id_token
 
 REQUIREMENTS_WORFLOW = os.getenv('REQUIREMENTS_WORFLOW')
 TESTCASE_CREATION_URL = os.getenv('TESTCASE_CREATION_URL')
+TESTCASE_ENHANCER_URL = os.getenv('TESTCASE_ENHANCER_URL')
 DATASET_TASKS_DISPATHER_URL = os.getenv('DATASET_TASKS_DISPATHER_URL')
 
 import logging
@@ -390,6 +391,53 @@ def confirm_requirements_and_trigger_testcase_creation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to confirm requirements: {str(e)}',
+        )
+
+
+@router.post(
+    '/{project_id}/v/{version}/t/{testcase_id}/update',
+    description='Updates a specific test case.',
+)
+def update_testcase(
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+    testcase_id: str = None,
+    request: UpdateTestCaseRequest = None,
+):
+    '''
+    Updates a specific test case.
+    '''
+    if not project_id or not version or not testcase_id or not request.prompt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID, version, testcase_id and prompt are required.',
+        )
+
+    uid = user.get('uid', None)
+
+    try:
+        response = requests.post(
+            url=TESTCASE_ENHANCER_URL,
+            json={
+                'uid': uid,
+                'project_id': project_id,
+                'version': version,
+                'testcase_id': testcase_id,
+                'prompt': request.prompt,
+            },
+            timeout=120,
+        )
+
+        logger.info(f'{TESTCASE_ENHANCER_URL} responded with {response.status_code}')
+        
+        return response.json()
+    except Exception as e:
+        logger.exception('Failed to update testcase.')
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to update testcase: {str(e)}',
         )
 
 

@@ -6,3 +6,6 @@ class ConnectProjectRequest(BaseModel):
     siteDomain: str
     projectKey: str
     projectName: str
+
+class UpdateTestCaseRequest(BaseModel):
+    prompt: str
