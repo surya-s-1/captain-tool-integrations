@@ -416,9 +416,13 @@ def update_testcase(
 
     uid = user.get('uid', None)
 
+    request = auth_requests.Request()
+    id_token = oauth2_id_token.fetch_id_token(request, TESTCASE_CREATION_URL)
+
     try:
         response = requests.post(
             url=TESTCASE_ENHANCER_URL,
+            headers={'Authorization': f'Bearer {id_token}'},
             json={
                 'uid': uid,
                 'project_id': project_id,
@@ -430,7 +434,7 @@ def update_testcase(
         )
 
         logger.info(f'{TESTCASE_ENHANCER_URL} responded with {response.status_code}')
-        
+
         return response.json()
     except Exception as e:
         logger.exception('Failed to update testcase.')
