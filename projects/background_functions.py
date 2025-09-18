@@ -22,7 +22,7 @@ def background_creation_on_tool(uid, project_id, version):
             project_id=project_id,
             version=version,
             update_details={
-                'status': 'START_REQ_CREATION_ON_TOOL',
+                'status': 'START_TC_CREATION_ON_TOOL',
                 'testcases_confirmed_by': uid,
             },
         )
@@ -38,7 +38,7 @@ def background_creation_on_tool(uid, project_id, version):
             db.update_version(
                 project_id=project_id,
                 version=version,
-                update_details={'status': 'ERR_REQ_CREATION_ON_TOOL'},
+                update_details={'status': 'ERR_TC_CREATION_ON_TOOL'},
             )
             return
 
@@ -46,99 +46,8 @@ def background_creation_on_tool(uid, project_id, version):
         tool_site_domain = project_details.get('toolSiteDomain')
         tool_project_key = project_details.get('toolProjectKey')
 
-        requirements = db.get_requirements(project_id, version)
-        requirements = [req for req in requirements if not req.get('deleted')]
-        requirements = [req for req in requirements if req.get('toolCreated') != 'SUCCESS']
-
         # # 1. Create in batches of 40
         batch_size = 40
-
-        for i in range(0, len(requirements), batch_size):
-            batch = requirements[i : i + batch_size]
-
-            try:
-                jira_client.create_bulk_requirements(
-                    uid, tool_site_id, tool_project_key, batch
-                )
-
-            except Exception as e:
-                logger.exception(f'Error creating batch of test cases: {e}')
-
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'COMPLETE_REQ_CREATION_ON_TOOL'},
-        )
-
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'START_REQ_SYNC_WITH_TOOL'},
-        )
-
-        try:
-            jira_issues = jira_client.search_issues_by_label(
-                uid, tool_site_domain, tool_site_id, 'Created_by_Captain'
-            )
-
-        except Exception as e:
-            logger.exception(f'Error getting issues from Jira: {e}')
-            db.update_version(
-                project_id=project_id,
-                version=version,
-                update_details={'status': 'ERR_REQ_SYNC_WITH_TOOL'},
-            )
-            return
-
-        requirement_key_mapping = {}
-
-        for requirement in requirements:
-            requirement_id = requirement.get('requirement_id')
-
-            if not requirement_id:
-                continue
-
-            found_match = False
-
-            for issue in jira_issues:
-                labels = issue.get('labels', [])
-
-                if requirement_id in labels:
-                    tool_key = issue.get('key', '')
-                    tool_link = issue.get('url', '')
-
-                    db.update_requirement(
-                        project_id,
-                        version,
-                        requirement_id,
-                        {'toolIssueKey': tool_key, 'toolIssueLink': tool_link, 'toolCreated': 'SUCCESS'},
-                    )
-
-                    found_match = True
-
-                    requirement_key_mapping[requirement_id] = tool_key
-
-                    break
-
-            if not found_match:
-
-                requirement_key_mapping[requirement_id] = ''
-
-                db.update_requirement(
-                    project_id, version, requirement_id, {'toolCreated': 'FAILED'}
-                )
-
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'COMPLETE_REQ_SYNC_WITH_TOOL'},
-        )
-
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'START_TC_CREATION_ON_TOOL'},
-        )
 
         testcases = db.get_testcases(project_id, version)
         testcases = [tc for tc in testcases if not tc.get('deleted')]
@@ -149,7 +58,7 @@ def background_creation_on_tool(uid, project_id, version):
 
             try:
                 jira_client.create_bulk_testcases(
-                    uid, tool_site_id, tool_project_key, requirement_key_mapping, batch
+                    uid, tool_site_id, tool_project_key, batch
                 )
 
             except Exception as e:
@@ -182,10 +91,10 @@ def background_creation_on_tool(uid, project_id, version):
             )
             return
 
-        for requirement in testcases:
-            requirement_id = requirement.get('testcase_id')
+        for testcase in testcases:
+            testcase_id = testcase.get('testcase_id')
 
-            if not requirement_id:
+            if not testcase_id:
                 continue
 
             found_match = False
@@ -194,14 +103,14 @@ def background_creation_on_tool(uid, project_id, version):
             for issue in jira_issues:
                 labels = issue.get('labels', [])
 
-                if requirement_id in labels:
+                if testcase_id in labels:
                     tool_key = issue.get('key', '')
                     tool_link = issue.get('url', '')
 
                     db.update_testcase(
                         project_id,
                         version,
-                        requirement_id,
+                        testcase_id,
                         {'toolIssueKey': tool_key, 'toolIssueLink': tool_link, 'toolCreated': 'SUCCESS'},
                     )
 
@@ -210,7 +119,7 @@ def background_creation_on_tool(uid, project_id, version):
 
             if not found_match:
                 db.update_testcase(
-                    project_id, version, requirement_id, {'toolCreated': 'FAILED'}
+                    project_id, version, testcase_id, {'toolCreated': 'FAILED'}
                 )
 
         db.update_version(
