@@ -167,7 +167,7 @@ class JiraClient:
         }
 
         issue_updates = []
-        
+
         for testcase in testcases:
             if (
                 not testcase.get('title')
@@ -219,7 +219,6 @@ class JiraClient:
         url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue/bulk'
         payload = {'issueUpdates': issue_updates}
         response = requests.post(url, headers=headers, data=json.dumps(payload))
-        response.raise_for_status()
 
         if response.status_code == 401:
             print('Access token expired, attempting to refresh...')
@@ -227,6 +226,8 @@ class JiraClient:
             headers['Authorization'] = f'Bearer {access_token}'
             response = requests.post(url, headers=headers, data=json.dumps(payload))
             response.raise_for_status()
+
+        response.raise_for_status()
 
         return response.json()
 
@@ -243,12 +244,11 @@ class JiraClient:
         if not access_token:
             raise Exception('Access token not found')
 
-        start_at = 0
-        total = 1
-        fetched = 0
+        next_page_token = None
+        is_last = False
 
-        while fetched < total:
-            url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/search'
+        while not is_last:
+            url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/search/jql'
 
             headers = {
                 'Authorization': f'Bearer {access_token}',
@@ -258,9 +258,11 @@ class JiraClient:
             payload = {
                 'jql': f'labels = \'{label}\'',
                 'maxResults': max_results_per_page,
-                'startAt': start_at,
                 'fields': ['key', 'labels'],
             }
+
+            if next_page_token:
+                payload['nextPageToken'] = next_page_token
 
             response = requests.post(url, headers=headers, data=json.dumps(payload))
 
@@ -285,9 +287,8 @@ class JiraClient:
 
                 issues.append({'key': issue_key, 'url': issue_url, 'labels': labels})
 
-            total = query_result.get('total', 0)
-            fetched += len(current_issues)
-            start_at += len(current_issues)
+            next_page_token = query_result.get('nextPageToken', None)
+            is_last = query_result.get('isLast', False)
 
         return issues
 
