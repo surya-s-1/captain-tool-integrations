@@ -150,7 +150,7 @@ class JiraClient:
         return issue_types
 
     def create_bulk_testcases(
-        self, uid, cloud_id, project_key, requirement_key_mapping, testcases
+        self, uid, cloud_id, project_key, testcases
     ):
         '''
         Constructs a bulk payload and creates multiple testcases as tasks or sub-tasks in Jira,
