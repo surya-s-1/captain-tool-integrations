@@ -474,7 +474,7 @@ def confirm_create_testcases_on_jira(
 
 @router.post(
     '/{project_id}/v/{version}/testcases/sync',
-    description='Confirms test cases and initiates their creation in Jira as a background task.',
+    description='Syncs the testcases with the app.',
 )
 def confirm_create_testcases_on_jira(
     background_tasks: BackgroundTasks,
@@ -483,7 +483,7 @@ def confirm_create_testcases_on_jira(
     version: str = None,
 ):
     '''
-    Confirms test cases and initiates their creation in Jira as a background task.
+    Syncs the testcases with the app.
     '''
     if not project_id or not version:
         raise HTTPException(
