@@ -61,13 +61,13 @@ workflow_client = ExecutionsClient()
 
 @router.post(
     '/connect',
-    description='Connects a user to a Jira project by either creating a new project entry or updating an existing one.',
+    description='Connects a user to an ALM project by either creating a new project entry or updating an existing one.',
 )
 def connect_project_to_application(
     user: Dict = Depends(get_current_user), request: ConnectProjectRequest = None
 ):
     '''
-    Connects a user to a Jira project by either creating a new project entry or updating an existing one.
+    Connects a user to an ALM project by either creating a new project entry or updating an existing one.
     '''
     if (
         not request
@@ -448,16 +448,16 @@ def update_testcase(
 
 @router.post(
     '/{project_id}/v/{version}/testcases/confirm',
-    description='Confirms test cases and initiates their creation in Jira as a background task.',
+    description='Confirms test cases and initiates their creation in ALM tool as a background task.',
 )
-def confirm_create_testcases_on_jira(
+def confirm_create_testcases_on_tool(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
 ):
     '''
-    Confirms test cases and initiates their creation in Jira as a background task.
+    Confirms test cases and initiates their creation in tool as a background task.
     '''
     if not project_id or not version:
         raise HTTPException(
@@ -476,7 +476,7 @@ def confirm_create_testcases_on_jira(
     '/{project_id}/v/{version}/testcases/sync',
     description='Syncs the testcases with the app.',
 )
-def confirm_create_testcases_on_jira(
+def sync_testcases_on_tool(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = None,
