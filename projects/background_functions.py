@@ -43,10 +43,8 @@ def background_creation_on_tool(uid, project_id, version):
             return
 
         tool_site_id = project_details.get('toolSiteId')
-        tool_site_domain = project_details.get('toolSiteDomain')
         tool_project_key = project_details.get('toolProjectKey')
 
-        # # 1. Create in batches of 40
         batch_size = 40
 
         testcases = db.get_testcases(project_id, version)
@@ -107,12 +105,6 @@ def background_sync_tool_testcases(uid, project_id, version):
         testcases = db.get_testcases(project_id, version)
         testcases = [tc for tc in testcases if not tc.get('deleted')]
 
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'START_TC_SYNC_WITH_TOOL'},
-        )
-
         try:
             jira_issues = jira_client.search_issues_by_label(
                 uid, tool_site_domain, tool_site_id, 'Created_by_Captain'
@@ -135,7 +127,6 @@ def background_sync_tool_testcases(uid, project_id, version):
 
             found_match = False
 
-            # 3. Find matching issue and update as SUCCESS
             for issue in jira_issues:
                 labels = issue.get('labels', [])
 
