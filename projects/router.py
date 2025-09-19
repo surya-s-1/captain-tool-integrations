@@ -22,6 +22,7 @@ from tools.jira.client import JiraClient
 from projects.models import ConnectProjectRequest, UpdateTestCaseRequest
 from projects.background_functions import (
     background_creation_on_tool,
+    background_sync_tool_testcases,
     background_zip_task,
     background_zip_all_task,
 )
@@ -467,6 +468,32 @@ def confirm_create_testcases_on_jira(
     uid = user.get('uid', None)
 
     background_tasks.add_task(background_creation_on_tool, uid, project_id, version)
+
+    return 'OK'
+
+
+@router.post(
+    '/{project_id}/v/{version}/testcases/sync',
+    description='Confirms test cases and initiates their creation in Jira as a background task.',
+)
+def confirm_create_testcases_on_jira(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+):
+    '''
+    Confirms test cases and initiates their creation in Jira as a background task.
+    '''
+    if not project_id or not version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
+
+    uid = user.get('uid', None)
+
+    background_tasks.add_task(background_sync_tool_testcases, uid, project_id, version)
 
     return 'OK'
 

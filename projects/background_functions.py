@@ -70,13 +70,49 @@ def background_creation_on_tool(uid, project_id, version):
             update_details={'status': 'COMPLETE_TC_CREATION_ON_TOOL'},
         )
 
+        background_sync_tool_testcases(uid=uid, project_id=project_id, version=version)
+
+    except Exception as e:
+        logger.exception(f'Error syncing test cases to Jira: {e}')
+
+def background_sync_tool_testcases(uid, project_id, version):
+    try:
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={
+                'status': 'START_TC_SYNC_WITH_TOOL',
+                'testcases_confirmed_by': uid,
+            },
+        )
+
+        project_details = db.get_project_details(project_id)
+
+        if (
+            not project_details
+            or not project_details.get('toolSiteId')
+            or not project_details.get('toolSiteDomain')
+            or not project_details.get('toolProjectKey')
+        ):
+            db.update_version(
+                project_id=project_id,
+                version=version,
+                update_details={'status': 'ERR_TC_SYNC_WITH_TOOL'},
+            )
+            return
+
+        tool_site_id = project_details.get('toolSiteId')
+        tool_site_domain = project_details.get('toolSiteDomain')
+
+        testcases = db.get_testcases(project_id, version)
+        testcases = [tc for tc in testcases if not tc.get('deleted')]
+
         db.update_version(
             project_id=project_id,
             version=version,
             update_details={'status': 'START_TC_SYNC_WITH_TOOL'},
         )
 
-        # 2. Get all issues from Jira with the label Created_by_Captain
         try:
             jira_issues = jira_client.search_issues_by_label(
                 uid, tool_site_domain, tool_site_id, 'Created_by_Captain'
@@ -111,7 +147,11 @@ def background_creation_on_tool(uid, project_id, version):
                         project_id,
                         version,
                         testcase_id,
-                        {'toolIssueKey': tool_key, 'toolIssueLink': tool_link, 'toolCreated': 'SUCCESS'},
+                        {
+                            'toolIssueKey': tool_key,
+                            'toolIssueLink': tool_link,
+                            'toolCreated': 'SUCCESS',
+                        },
                     )
 
                     found_match = True
@@ -122,11 +162,7 @@ def background_creation_on_tool(uid, project_id, version):
                     project_id, version, testcase_id, {'toolCreated': 'FAILED'}
                 )
 
-        db.update_version(
-            project_id, 
-            version, 
-            {'status': 'COMPLETE_TC_SYNC_WITH_TOOL'}
-        )
+        db.update_version(project_id, version, {'status': 'COMPLETE_TC_SYNC_WITH_TOOL'})
 
     except Exception as e:
         logger.exception(f'Error syncing test cases to Jira: {e}')
