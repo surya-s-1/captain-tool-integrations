@@ -504,7 +504,6 @@ def sync_testcases_on_tool(
     description='Creates a specific test cases in ALM tool as a background task.',
 )
 def confirm_create_testcases_on_tool(
-    background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
@@ -521,9 +520,11 @@ def confirm_create_testcases_on_tool(
 
     uid = user.get('uid', None)
 
-    background_tasks.add_task(
-        background_creation_specific_testcase_on_tool, 
-        uid, project_id, version, testcase_id
+    background_creation_specific_testcase_on_tool(
+        uid=uid,
+        project_id=project_id,
+        version=version,
+        tc_id=testcase_id,
     )
 
     return 'OK'
