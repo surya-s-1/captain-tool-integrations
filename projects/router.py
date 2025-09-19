@@ -23,6 +23,7 @@ from projects.models import ConnectProjectRequest, UpdateTestCaseRequest
 from projects.background_functions import (
     background_creation_on_tool,
     background_sync_tool_testcases,
+    background_creation_specific_testcase_on_tool,
     background_zip_task,
     background_zip_all_task,
 )
@@ -494,6 +495,36 @@ def sync_testcases_on_tool(
     uid = user.get('uid', None)
 
     background_tasks.add_task(background_sync_tool_testcases, uid, project_id, version)
+
+    return 'OK'
+
+
+@router.post(
+    '/{project_id}/v/{version}/t/{testcase_id}/create/one',
+    description='Creates a specific test cases in ALM tool as a background task.',
+)
+def confirm_create_testcases_on_tool(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+    testcase_id: str = None,
+):
+    '''
+    Confirms test cases and initiates their creation in tool as a background task.
+    '''
+    if not project_id or not version or not testcase_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
+
+    uid = user.get('uid', None)
+
+    background_tasks.add_task(
+        background_creation_specific_testcase_on_tool, 
+        uid, project_id, version, testcase_id
+    )
 
     return 'OK'
 

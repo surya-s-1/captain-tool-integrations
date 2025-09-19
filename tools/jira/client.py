@@ -149,6 +149,78 @@ class JiraClient:
 
         return issue_types
 
+    def create_one_testcase(
+        self, uid, cloud_id, project_key, testcase
+    ):
+        access_token = self.get_usage_access_token(uid)
+        if not access_token:
+            raise Exception('Access token not found')
+
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+        }
+
+        if (
+            not testcase.get('title')
+            or not testcase.get('description')
+            or not testcase.get('testcase_id')
+        ):
+            return
+
+        acceptance_criteria = testcase.get('acceptance_criteria', '')
+
+        description_text = testcase.get('description', '')
+
+        if acceptance_criteria:
+            description_text += f'\n\n*Acceptance Criteria:*\n{acceptance_criteria}'
+
+        payload = {
+            'fields': {
+                'project': {'key': project_key},
+                'summary': testcase.get('title'),
+                'description': {
+                    'type': 'doc',
+                    'version': 1,
+                    'content': [
+                        {
+                            'type': 'paragraph',
+                            'content': [
+                                {
+                                    'text': description_text or "",
+                                    'type': 'text',
+                                }
+                            ],
+                        }
+                    ],
+                },
+                'issuetype': {'name': 'Task'},
+                'priority': {'name': testcase.get('priority', 'Medium')},
+                'labels': [
+                    'AI_Generated',
+                    'Created_by_Captain',
+                    'Testcase',
+                    testcase.get('testcase_id'),
+                    testcase.get('requirement_id'),
+                ],
+            }
+        }
+
+        url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue/bulk'
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+
+        if response.status_code == 401:
+            print('Access token expired, attempting to refresh...')
+            access_token = self.get_usage_access_token(uid, new_set=True)
+            headers['Authorization'] = f'Bearer {access_token}'
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            response.raise_for_status()
+
+        response.raise_for_status()
+
+        return response.json()
+
     def create_bulk_testcases(
         self, uid, cloud_id, project_key, testcases
     ):
@@ -202,15 +274,15 @@ class JiraClient:
                             }
                         ],
                     },
-                    'issuetype': { 'name': 'Task' },
+                    'issuetype': {'name': 'Task'},
                     'priority': {'name': testcase.get('priority', 'Medium')},
                     'labels': [
-                            'AI_Generated',
-                            'Created_by_Captain',
-                            'Testcase',
-                            testcase.get('testcase_id'),
-                            testcase.get('requirement_id'),
-                        ]
+                        'AI_Generated',
+                        'Created_by_Captain',
+                        'Testcase',
+                        testcase.get('testcase_id'),
+                        testcase.get('requirement_id'),
+                    ],
                 }
             }
 

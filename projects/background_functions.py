@@ -159,6 +159,71 @@ def background_sync_tool_testcases(uid, project_id, version):
         logger.exception(f'Error syncing test cases to Jira: {e}')
 
 
+def background_creation_specific_testcase_on_tool(uid, project_id, version, tc_id):
+    try:
+        project_details = db.get_project_details(project_id)
+
+        if (
+            not project_details
+            or not project_details.get('toolSiteId')
+            or not project_details.get('toolSiteDomain')
+            or not project_details.get('toolProjectKey')
+        ):
+            return
+
+        tool_site_id = project_details.get('toolSiteId')
+        tool_site_domain = project_details.get('toolSiteDomain')
+        tool_project_key = project_details.get('toolProjectKey')
+
+        testcase = db.get_testcase_details(project_id, version, tc_id)
+        testcase_id = testcase.get('testcase_id')
+
+        try:
+            jira_client.create_one_testcase(
+                uid, tool_site_id, tool_project_key, testcase
+            )
+
+            jira_issues = jira_client.search_issues_by_label(
+                uid, tool_site_domain, tool_site_id, testcase_id
+            )
+
+            found_match = False
+
+            for issue in jira_issues:
+                labels = issue.get('labels', [])
+
+                if testcase_id in labels:
+                    tool_key = issue.get('key', '')
+                    tool_link = issue.get('url', '')
+
+                    db.update_testcase(
+                        project_id,
+                        version,
+                        testcase_id,
+                        {
+                            'toolIssueKey': tool_key,
+                            'toolIssueLink': tool_link,
+                            'toolCreated': 'SUCCESS',
+                        },
+                    )
+
+                    found_match = True
+                    break
+
+            if not found_match:
+                db.update_testcase(
+                    project_id, version, testcase_id, {'toolCreated': 'FAILED'}
+                )
+
+        except Exception as e:
+            logger.exception(f'Error creating batch of test cases: {e}')
+
+        background_sync_tool_testcases(uid=uid, project_id=project_id, version=version)
+
+    except Exception as e:
+        logger.exception(f'Error syncing test cases to Jira: {e}')
+
+
 def background_zip_task(job_id: str, project_id: str, version: str, testcase_id: str):
     '''
     Background task to download GCS files and zip them.
