@@ -1,7 +1,7 @@
-import os
 import io
 import zipfile
 import logging
+from fastapi import HTTPException, status
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
@@ -216,6 +216,11 @@ def background_creation_specific_testcase_on_tool(uid, project_id, version, tc_i
 
     except Exception as e:
         logger.exception(f'Error creating test case: {e}')
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to create test case: {str(e)}',
+        )
 
 
 def background_zip_task(job_id: str, project_id: str, version: str, testcase_id: str):

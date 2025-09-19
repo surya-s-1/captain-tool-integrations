@@ -207,7 +207,7 @@ class JiraClient:
             }
         }
 
-        url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue/bulk'
+        url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue'
         response = requests.post(url, headers=headers, data=json.dumps(payload))
 
         if response.status_code == 401:
