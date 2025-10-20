@@ -850,7 +850,7 @@ async def create_new_version(
         prev_version, new_version = db.create_new_project_version(project_id, uid)
         db.copy_requirements_with_history(project_id, prev_version, new_version)
 
-        return 'OK'
+        return new_version
     except Exception as e:
         logger.exception(f'Failed to create new version: {e}')
 
