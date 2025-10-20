@@ -14,7 +14,7 @@ from fastapi import (
     BackgroundTasks,
     Body,
 )
-from starlette.responses import StreamingResponse
+from starlette.responses import StreamingResponse, PlainTextResponse
 
 from auth import get_current_user
 from tools.jira.client import JiraClient
@@ -850,7 +850,8 @@ async def create_new_version(
         prev_version, new_version = db.create_new_project_version(project_id, uid)
         db.copy_requirements_with_history(project_id, prev_version, new_version)
 
-        return new_version
+        return PlainTextResponse(content=new_version)
+    
     except Exception as e:
         logger.exception(f'Failed to create new version: {e}')
 
