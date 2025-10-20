@@ -1,13 +1,21 @@
 import io
+import os
 import zipfile
 import logging
+import requests
 from fastapi import HTTPException, status
+import google.auth.transport.requests as auth_requests
+import google.oauth2.id_token as oauth2_id_token
 
 from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
 from gcp.storage import upload_file_to_gcs, get_file_from_gcs
 
 from tools.jira.client import JiraClient
+
+REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT = os.getenv(
+    'REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT'
+)
 
 db = FirestoreDB()
 sm = SecretManager()
@@ -72,6 +80,7 @@ def background_creation_on_tool(uid, project_id, version):
 
     except Exception as e:
         logger.exception(f'Error syncing test cases to Jira: {e}')
+
 
 def background_sync_tool_testcases(uid, project_id, version):
     try:
@@ -178,9 +187,7 @@ def background_creation_specific_testcase_on_tool(uid, project_id, version, tc_i
         testcase = db.get_testcase_details(project_id, version, tc_id)
         testcase_id = testcase.get('testcase_id')
 
-        jira_client.create_one_testcase(
-            uid, tool_site_id, tool_project_key, testcase
-        )
+        jira_client.create_one_testcase(uid, tool_site_id, tool_project_key, testcase)
 
         jira_issues = jira_client.search_issues_by_label(
             uid, tool_site_domain, tool_site_id, testcase_id
@@ -317,3 +324,38 @@ def background_zip_all_task(job_id: str, project_id: str, version: str):
     except Exception as e:
         logger.exception(f'Error in background zip task for job {job_id}: {e}')
         db.update_download_job_status(job_id, 'failed', error=str(e))
+
+
+def background_invoke_change_analysis_implicit_processing(project_id, version):
+    try:
+        request = auth_requests.Request()
+        id_token = oauth2_id_token.fetch_id_token(
+            request, REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT
+        )
+
+        response = requests.post(
+            REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT,
+            headers={'Authorization': f'Bearer {id_token}'},
+            json={
+                'project_id': project_id,
+                'version': version,
+            },
+            timeout=600,
+        )
+
+        response.raise_for_status()
+
+        logging.info(
+            f'{REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT} responded with {response.status_code}'
+        )
+
+    except Exception as e:
+        logger.exception(
+            f'Error when invoking implicit req processor for change analysis: {e}'
+        )
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'ERR_CHANGE_ANALYSIS_IMPLICT'},
+        )

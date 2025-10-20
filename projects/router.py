@@ -26,6 +26,7 @@ from projects.background_functions import (
     background_creation_specific_testcase_on_tool,
     background_zip_task,
     background_zip_all_task,
+    background_invoke_change_analysis_implicit_processing,
 )
 
 from gcp.firestore import FirestoreDB
@@ -43,7 +44,10 @@ from google.cloud.workflows.executions_v1beta import (
 import google.auth.transport.requests as auth_requests
 import google.oauth2.id_token as oauth2_id_token
 
-REQUIREMENTS_WORFLOW = os.getenv('REQUIREMENTS_WORFLOW')
+REQUIREMENTS_CREATION_WORFLOW = os.getenv('REQUIREMENTS_CREATION_WORFLOW')
+REQUIREMENTS_CHANGE_ANALYSIS_WORKFLOW = os.getenv(
+    'REQUIREMENTS_CHANGE_ANALYSIS_WORKFLOW'
+)
 TESTCASE_CREATION_URL = os.getenv('TESTCASE_CREATION_URL')
 TESTCASE_ENHANCER_URL = os.getenv('TESTCASE_ENHANCER_URL')
 DATASET_TASKS_DISPATHER_URL = os.getenv('DATASET_TASKS_DISPATHER_URL')
@@ -169,7 +173,7 @@ def get_project_details(user: Dict = Depends(get_current_user), project_id: str 
     '/{project_id}/v/{version}/docs/upload',
     description='Uploads documentation files for a specific project version.',
 )
-def upload_documentation_for_project_latest_version(
+def upload_documentation_for_a_project_version(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
@@ -224,13 +228,20 @@ def upload_documentation_for_project_latest_version(
 
         execution = Execution(argument=json.dumps(message_data))
 
-        request = CreateExecutionRequest(
-            parent=REQUIREMENTS_WORFLOW, execution=execution
-        )
+        if version == 'v1':
+            request = CreateExecutionRequest(
+                parent=REQUIREMENTS_CREATION_WORFLOW, execution=execution
+            )
+        else:
+            request = CreateExecutionRequest(
+                parent=REQUIREMENTS_CHANGE_ANALYSIS_WORKFLOW, execution=execution
+            )
 
         response = workflow_client.create_execution(request=request)
 
-        logger.info(f'Workflow execution started successfully. Execution ID: {response.name}')
+        logger.info(
+            f'Workflow execution started successfully. Execution ID: {response.name}'
+        )
 
         return f'Files uploaded successfully.'
 
@@ -504,7 +515,7 @@ def sync_testcases_on_tool(
     '/{project_id}/v/{version}/t/{testcase_id}/create/one',
     description='Creates a specific test cases in ALM tool as a background task.',
 )
-def confirm_create_testcases_on_tool(
+def create_testcase_on_tool(
     user: Dict = Depends(get_current_user),
     project_id: str = None,
     version: str = None,
@@ -820,8 +831,7 @@ async def get_testcases_filtered(
     description='Creates a new version for a given project.',
 )
 async def create_new_version(
-    user: Dict = Depends(get_current_user),
-    project_id: str = None
+    user: Dict = Depends(get_current_user), project_id: str = None
 ):
     '''
     Creates a new version for a given project.
@@ -850,4 +860,49 @@ async def create_new_version(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to create new version',
+        )
+
+
+@router.post(
+    '/{project_id}/v/{version}/confirm/changeAnalysis',
+    description='Confirm the change analysis',
+)
+def confirm_change_analysis(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+):
+    '''
+    Confirm the change analysis
+    '''
+    if not project_id or not version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
+
+    uid = user.get('uid')
+
+    try:
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={
+                'change_analysis_confirmed_by': uid,
+            },
+        )
+
+        background_tasks.add_task(
+            background_invoke_change_analysis_implicit_processing,
+            project_id=project_id,
+            version=version,
+        )
+
+        return 'Request received'
+    except Exception as e:
+        logger.exception(f'Failed to confirm change analysis: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to confirm change analysis',
         )
