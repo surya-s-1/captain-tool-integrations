@@ -308,7 +308,7 @@ class FirestoreDB:
                     'version': new_version_ref.id,
                     'status': 'CREATED',
                     'project_id': project_id,
-                    'project_name': project_data.get('project_name'),
+                    'project_name': project_data.get('toolProjectName'),
                     'created_by': uid,
                     'created_at': firestore.SERVER_TIMESTAMP,
                 }
