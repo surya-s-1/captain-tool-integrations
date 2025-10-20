@@ -191,6 +191,10 @@ class FirestoreDB:
         version_ref = self.db.collection('projects').document(project_id)
         version_ref.update({'uids': firestore.ArrayUnion([uid])})
 
+    def update_project_details(self, project_id, update_details):
+        project_ref = self.db.collection('projects').document(project_id)
+        project_ref.update(update_details)
+
     def update_version(self, project_id, version, update_details):
         version_ref = (
             self.db.collection('projects')

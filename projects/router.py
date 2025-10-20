@@ -857,6 +857,10 @@ async def create_new_version(
 
         if new_version:
             db.delete_version(project_id, new_version)
+            db.update_project_details(
+                project_id=project_id,
+                update_details={'latest_version': prev_version}
+            )
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
