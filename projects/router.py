@@ -851,7 +851,7 @@ async def create_new_version(
         db.copy_requirements_with_history(project_id, prev_version, new_version)
 
         return PlainTextResponse(content=new_version)
-    
+
     except Exception as e:
         logger.exception(f'Failed to create new version: {e}')
 
@@ -868,8 +868,49 @@ async def create_new_version(
         )
 
 
+@router.post('/{project_id}/v/{version}/changeAnalysisStatus/update')
+def update_change_analysis_status(
+    user: Dict = Depends(get_current_user),
+    project_id: str = None,
+    version: str = None,
+    requirement_id: str = Body(None),
+    new_status: str = Body(None),
+):
+    '''
+    Updates the change analysis status.
+    '''
+
+    if not project_id or not version or not requirement_id or not new_status:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID, version, requirement id and new_status are required.',
+        )
+
+    uid = user.get('uid')
+
+    try:
+        db.update_requirement(
+            project_id=project_id,
+            version=version,
+            req_id=requirement_id,
+            update_details={
+                'change_analysis_status': new_status,
+                'change_analysis_reason': f'Selected by user - {uid}',
+            },
+        )
+
+        return 'OK'
+    except Exception as e:
+        logger.exception(f'Failed to update change analysis status: {e}')
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to confirm change analysis',
+        )
+
+
 @router.post(
-    '/{project_id}/v/{version}/confirm/changeAnalysis',
+    '/{project_id}/v/{version}/changeAnalysis/confirm',
     description='Confirm the change analysis',
 )
 def confirm_change_analysis(
@@ -907,6 +948,7 @@ def confirm_change_analysis(
         return 'Request received'
     except Exception as e:
         logger.exception(f'Failed to confirm change analysis: {e}')
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to confirm change analysis',
