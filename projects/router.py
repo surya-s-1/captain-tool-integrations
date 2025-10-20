@@ -232,24 +232,17 @@ def upload_documentation_for_a_project_version(
             request = CreateExecutionRequest(
                 parent=REQUIREMENTS_CREATION_WORFLOW, execution=execution
             )
-
-            response = workflow_client.create_execution(request=request)
-
-            logger.info(
-                f'Workflow execution started successfully. Execution ID: {response.name}'
-            )
-
         else:
             request = CreateExecutionRequest(
                 parent=REQUIREMENTS_CHANGE_ANALYSIS_WORKFLOW, execution=execution
             )
 
-            response = workflow_client.create_execution(request=request)
+        response = workflow_client.create_execution(request=request)
 
-            logger.info(
-                f'Workflow execution started successfully. Execution ID: {response.name}'
-            )
-            
+        logger.info(
+            f'Workflow execution started successfully. Execution ID: {response.name}'
+        )
+
         return f'Files uploaded successfully.'
 
     except HTTPException as e:
