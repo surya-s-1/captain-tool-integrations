@@ -94,6 +94,7 @@ def connect_project_to_application(
 
         if not project_id:
             db.create_project(
+                uid=uid,
                 tool_name=request.tool.lower(),
                 site_id=request.siteId,
                 site_domain=request.siteDomain,
@@ -229,7 +230,7 @@ def upload_documentation_for_project_latest_version(
 
         response = workflow_client.create_execution(request=request)
 
-        print(f'Workflow execution started successfully. Execution ID: {response.name}')
+        logger.info(f'Workflow execution started successfully. Execution ID: {response.name}')
 
         return f'Files uploaded successfully.'
 
@@ -811,4 +812,42 @@ async def get_testcases_filtered(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f'Failed to retrieve requirements: {str(e)}',
+        )
+
+
+@router.post(
+    '/{project_id}/createNewVersion',
+    description='Creates a new version for a given project.',
+)
+async def create_new_version(
+    user: Dict = Depends(get_current_user),
+    project_id: str = None
+):
+    '''
+    Creates a new version for a given project.
+    '''
+    if not project_id or not user.get('uid'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID is required.',
+        )
+
+    uid = user.get('uid')
+
+    new_version = ''
+
+    try:
+        prev_version, new_version = db.create_new_project_version(project_id, uid)
+        db.copy_requirements_with_history(project_id, prev_version, new_version)
+
+        return 'OK'
+    except Exception as e:
+        logger.exception(f'Failed to create new version: {e}')
+
+        if new_version:
+            db.delete_version(project_id, new_version)
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to create new version',
         )

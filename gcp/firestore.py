@@ -1,9 +1,14 @@
-from google.cloud import firestore
 import os
+import copy
+import datetime
+from logging import Logger
+from google.cloud import firestore
 
 GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 FIRESTORE_DATABASE = os.getenv('FIRESTORE_DATABASE')
+REQUIREMENTS_COLLECTION = 'requirements'
 
+logger = Logger(__name__)
 
 class FirestoreDB:
     '''
@@ -63,7 +68,7 @@ class FirestoreDB:
         return None
 
     def create_project(
-        self, tool_name, site_domain, site_id, project_key, project_name
+        self, uid, tool_name, site_domain, site_id, project_key, project_name
     ):
         project_doc_ref = self.db.collection('projects').document()
         project_doc_ref.set(
@@ -74,6 +79,8 @@ class FirestoreDB:
                 'toolProjectName': project_name,
                 'toolProjectKey': project_key,
                 'project_id': project_doc_ref.id,
+                'created_by': uid,
+                'uids': [uid],
                 'created_at': firestore.SERVER_TIMESTAMP,
             }
         )
@@ -85,6 +92,7 @@ class FirestoreDB:
                 'project_name': project_name,
                 'project_id': project_doc_ref.id,
                 'status': 'CREATED',
+                'created_by': uid,
                 'created_at': firestore.SERVER_TIMESTAMP,
             }
         )
@@ -110,9 +118,7 @@ class FirestoreDB:
 
     def get_connected_projects(self, uid):
         collection_ref = self.db.collection('projects')
-        query = (
-            collection_ref.where('uids', 'array_contains', uid)
-        )
+        query = collection_ref.where('uids', 'array_contains', uid)
 
         docs = query.get()
 
@@ -216,9 +222,9 @@ class FirestoreDB:
     def create_download_job(
         self, uid: str, project_id: str, version: str, testcase_id: str
     ):
-        """
+        '''
         Creates a new document in the 'jobs' collection to track a download task.
-        """
+        '''
         job_ref = self.db.collection('jobs').document()
         job_ref.set(
             {
@@ -236,9 +242,9 @@ class FirestoreDB:
         return job_ref.id
 
     def create_download_all_job(self, uid: str, project_id: str, version: str):
-        """
+        '''
         Creates a new document in the 'jobs' collection to track a download task.
-        """
+        '''
         job_ref = self.db.collection('jobs').document()
         job_ref.set(
             {
@@ -256,9 +262,9 @@ class FirestoreDB:
         return job_ref.id
 
     def get_download_job(self, job_id: str):
-        """
+        '''
         Retrieves a download job document.
-        """
+        '''
         job_ref = self.db.collection('jobs').document(job_id)
         job_doc = job_ref.get()
         return job_doc.to_dict() if job_doc.exists else None
@@ -271,9 +277,9 @@ class FirestoreDB:
         result_url: str = None,
         error: str = None,
     ):
-        """
+        '''
         Updates the status and optional results or errors for a download job.
-        """
+        '''
         job_ref = self.db.collection('jobs').document(job_id)
         update_data = {'status': status}
         if result_url:
@@ -284,3 +290,113 @@ class FirestoreDB:
         if error:
             update_data['error'] = error
         job_ref.update(update_data)
+
+    def create_new_project_version(self, project_id: str, uid: str):
+        try:
+            project_data = self.db.document(f'projects/{project_id}').get()
+
+            prev_version_id: str = project_data.get('latest_version')
+            prev_version_id_num = int(prev_version_id[1:])
+            new_version_id_num = prev_version_id_num + 1
+
+            new_version_ref = self.db.collection(
+                f'projects/{project_id}/versions'
+            ).document(f'v{new_version_id_num}')
+
+            new_version_ref.set(
+                {
+                    'version': new_version_ref.id,
+                    'status': 'CREATED',
+                    'project_id': project_id,
+                    'project_name': project_data.get('project_name'),
+                    'created_by': uid,
+                    'created_at': firestore.SERVER_TIMESTAMP,
+                }
+            )
+
+            self.db.document(f'projects/{project_id}').update(
+                {'latest_version': new_version_ref.id}
+            )
+
+            return prev_version_id, new_version_ref.id
+
+        except Exception as e:
+            logger.exception(f'Error creating new project version: {e}')
+            raise
+
+    def process_document_data(self, prev_version: str, doc_data: dict) -> dict:
+        existing_history = []
+        prev_history = doc_data.pop('history', [])
+
+        if isinstance(prev_history, list):
+            existing_history.extend(prev_history)
+
+        current_state_entry = {
+            'version': prev_version,
+            'fields': copy.deepcopy(doc_data),
+            'copied_at': datetime.datetime.now(datetime.timezone.utc),
+        }
+
+        new_history = [current_state_entry] + existing_history
+
+        doc_data['history'] = new_history
+
+        return doc_data
+
+    def copy_requirements_with_history(
+        self, project_id: str, prev_version: str, new_version: str
+    ):
+        source_doc_path = f'projects/{project_id}/versions/{prev_version}'
+        target_doc_path = f'projects/{project_id}/versions/{new_version}'
+
+        logger.info(f'Source: {source_doc_path}/{REQUIREMENTS_COLLECTION}')
+        logger.info(f'Target: {target_doc_path}/{REQUIREMENTS_COLLECTION}')
+
+        try:
+            source_subcollection_ref = self.db.collection(
+                f'{source_doc_path}/{REQUIREMENTS_COLLECTION}'
+            )
+            target_subcollection_ref = self.db.collection(
+                f'{target_doc_path}/{REQUIREMENTS_COLLECTION}'
+            )
+
+            docs_to_copy = source_subcollection_ref.stream()
+
+            batch = self.db.batch()
+            copy_count = 0
+            batch_size = 0
+
+            for doc in docs_to_copy:
+                doc_id = doc.id
+                doc_data = doc.to_dict()
+
+                processed_data = self.process_document_data(prev_version, doc_data)
+
+                target_doc_ref = target_subcollection_ref.document(doc_id)
+                batch.set(target_doc_ref, processed_data)
+
+                copy_count += 1
+                batch_size += 1
+
+                if batch_size >= 499:
+                    logger.info(f'Committing batch of {batch_size} documents...')
+                    batch.commit()
+                    batch = self.db.batch()  # Start a new batch
+                    batch_size = 0
+
+            if batch_size > 0:
+                logger.info(f'Committing final batch of {batch_size} documents...')
+                batch.commit()
+
+            logger.info(f'Successfully copied {copy_count} documents.')
+
+        except Exception as e:
+            logger.exception(f'A critical error occurred: {e}')
+            raise
+
+    def delete_version(self, project_id: str, version: str):
+        version_ref = self.db.collection(f'projects/{project_id}/versions').document(
+            version
+        )
+        version_ref.delete()
+        return None
