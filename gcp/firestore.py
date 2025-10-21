@@ -7,8 +7,10 @@ from google.cloud import firestore
 GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 FIRESTORE_DATABASE = os.getenv('FIRESTORE_DATABASE')
 REQUIREMENTS_COLLECTION = 'requirements'
+TESTCASES_COLLECTION = 'testcases'
 
 logger = Logger(__name__)
+
 
 class FirestoreDB:
     '''
@@ -347,7 +349,7 @@ class FirestoreDB:
 
         return doc_data
 
-    def copy_requirements_with_history(
+    def copy_requirements_and_testcases_with_history(
         self, project_id: str, prev_version: str, new_version: str
     ):
         source_doc_path = f'projects/{project_id}/versions/{prev_version}'
@@ -362,6 +364,51 @@ class FirestoreDB:
             )
             target_subcollection_ref = self.db.collection(
                 f'{target_doc_path}/{REQUIREMENTS_COLLECTION}'
+            )
+
+            docs_to_copy = source_subcollection_ref.stream()
+
+            batch = self.db.batch()
+            copy_count = 0
+            batch_size = 0
+
+            for doc in docs_to_copy:
+                doc_id = doc.id
+                doc_data = doc.to_dict()
+
+                processed_data = self.process_document_data(prev_version, doc_data)
+
+                target_doc_ref = target_subcollection_ref.document(doc_id)
+                batch.set(target_doc_ref, processed_data)
+
+                copy_count += 1
+                batch_size += 1
+
+                if batch_size >= 499:
+                    logger.info(f'Committing batch of {batch_size} documents...')
+                    batch.commit()
+                    batch = self.db.batch()  # Start a new batch
+                    batch_size = 0
+
+            if batch_size > 0:
+                logger.info(f'Committing final batch of {batch_size} documents...')
+                batch.commit()
+
+            logger.info(f'Successfully copied {copy_count} documents.')
+
+        except Exception as e:
+            logger.exception(f'A critical error occurred: {e}')
+            raise
+
+        logger.info(f'Source: {source_doc_path}/{TESTCASES_COLLECTION}')
+        logger.info(f'Target: {target_doc_path}/{TESTCASES_COLLECTION}')
+
+        try:
+            source_subcollection_ref = self.db.collection(
+                f'{source_doc_path}/{TESTCASES_COLLECTION}'
+            )
+            target_subcollection_ref = self.db.collection(
+                f'{target_doc_path}/{TESTCASES_COLLECTION}'
             )
 
             docs_to_copy = source_subcollection_ref.stream()

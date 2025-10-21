@@ -848,7 +848,9 @@ async def create_new_version(
 
     try:
         prev_version, new_version = db.create_new_project_version(project_id, uid)
-        db.copy_requirements_with_history(project_id, prev_version, new_version)
+        db.copy_requirements_and_testcases_with_history(
+            project_id, prev_version, new_version
+        )
 
         return PlainTextResponse(content=new_version)
 
@@ -858,8 +860,7 @@ async def create_new_version(
         if new_version:
             db.delete_version(project_id, new_version)
             db.update_project_details(
-                project_id=project_id,
-                update_details={'latest_version': prev_version}
+                project_id=project_id, update_details={'latest_version': prev_version}
             )
 
         raise HTTPException(
