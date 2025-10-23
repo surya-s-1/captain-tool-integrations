@@ -1,3 +1,4 @@
+import time
 import requests
 import json
 import os
@@ -149,9 +150,7 @@ class JiraClient:
 
         return issue_types
 
-    def create_one_testcase(
-        self, uid, cloud_id, project_key, testcase
-    ):
+    def create_one_testcase(self, uid, cloud_id, project_key, testcase):
         access_token = self.get_usage_access_token(uid)
         if not access_token:
             raise Exception('Access token not found')
@@ -188,7 +187,7 @@ class JiraClient:
                             'type': 'paragraph',
                             'content': [
                                 {
-                                    'text': description_text or "",
+                                    'text': description_text or '',
                                     'type': 'text',
                                 }
                             ],
@@ -221,12 +220,9 @@ class JiraClient:
 
         return response.json()
 
-    def create_bulk_testcases(
-        self, uid, cloud_id, project_key, testcases
-    ):
+    def create_bulk_testcases(self, uid, cloud_id, project_key, testcases):
         '''
-        Constructs a bulk payload and creates multiple testcases as tasks or sub-tasks in Jira,
-        depending on project configuration.
+        Constructs a bulk payload and creates multiple testcases as tasks in Jira, depending on project configuration.
         '''
         access_token = self.get_usage_access_token(uid)
         if not access_token:
@@ -267,7 +263,7 @@ class JiraClient:
                                 'type': 'paragraph',
                                 'content': [
                                     {
-                                        'text': description_text or "",
+                                        'text': description_text or '',
                                         'type': 'text',
                                     }
                                 ],
@@ -301,7 +297,59 @@ class JiraClient:
 
         response.raise_for_status()
 
-        return response.json()
+    def update_testcase(
+        self, uid, cloud_id, project_key, testcase, new_access_token=False
+    ):
+        access_token = self.get_usage_access_token(uid, new_set=new_access_token)
+
+        if not access_token:
+            raise Exception('Access token not found')
+
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+        }
+
+        if not testcase.get('title') or not testcase.get('toolIssueKey'):
+            return False
+
+        issue_key = testcase.get('toolIssueKey')
+
+        url = f'{self.base_api_url}/ex/jira/{cloud_id}/rest/api/3/issue/{issue_key}/'
+
+        payload = {'fields': {'summary': testcase.get('title')}}
+
+        for attempt in range(5):
+            response = requests.put(url, headers=headers, data=json.dumps(payload))
+
+            if response.status_code == 401:
+                logger.warning('Access token expired, attempting to refresh...')
+                self.update_testcase(uid, cloud_id, project_key, testcase, True)
+
+            elif response.status_code == 204:
+                logger.info(f'Updated {cloud_id} {project_key} {issue_key}')
+                return True
+
+            elif response.status_code == 429:
+                retry_after = int(response.headers.get('Retry-After', 5))
+                logger.warning(f'Rate limit hit. Waiting {retry_after} seconds...')
+                time.sleep(retry_after)
+
+            response.raise_for_status()
+
+        logger.warning(
+            f'Gave up on {cloud_id} {project_key} {issue_key} after retries.'
+        )
+        return False
+
+    def update_bulk_testcases(self, uid, cloud_id, project_key, testcases):
+        '''
+        Constructs a bulk payload and updates multiple testcases as tasks in Jira, depending on project configuration.
+        '''
+        for testcase in testcases:
+            self.update_testcase(uid, cloud_id, project_key, testcase)
+            time.sleep(0.5)
 
     def search_issues_by_label(
         self, uid, cloud_domain, cloud_id, label, max_results_per_page=100

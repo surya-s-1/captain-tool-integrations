@@ -56,11 +56,18 @@ def background_creation_on_tool(uid, project_id, version):
         batch_size = 40
 
         testcases = db.get_testcases(project_id, version)
-        testcases = [tc for tc in testcases if not tc.get('deleted')]
-        testcases = [tc for tc in testcases if tc.get('toolCreated') != 'SUCCESS']
 
-        for i in range(0, len(testcases), batch_size):
-            batch = testcases[i : i + batch_size]
+        create_testcases = [
+            tc
+            for tc in testcases
+            if not tc.get('deleted', False)
+            and not tc.get('duplicate', False)
+            and not tc.get('toolCreated') == 'SUCCESS'
+            and tc.get('change_analysis_status') == 'NEW'
+        ]
+
+        for i in range(0, len(create_testcases), batch_size):
+            batch = create_testcases[i : i + batch_size]
 
             try:
                 jira_client.create_bulk_testcases(
@@ -69,6 +76,30 @@ def background_creation_on_tool(uid, project_id, version):
 
             except Exception as e:
                 logger.exception(f'Error creating batch of test cases: {e}')
+
+        deprecated_testcases = [
+            tc
+            for tc in testcases
+            if not tc.get('deleted', False)
+            and not tc.get('duplicate', False)
+            and tc.get('change_analysis_status') == 'DEPRECATED'
+        ]
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={
+                'status': 'UPDATE_DEP_TC_ON_TOOL'
+            },
+        )
+
+        try:
+            jira_client.update_bulk_testcases(
+                uid, tool_site_id, tool_project_key, deprecated_testcases
+            )
+
+        except Exception as e:
+            logger.exception(f'Error creating batch of test cases: {e}')
 
         db.update_version(
             project_id=project_id,
@@ -112,7 +143,9 @@ def background_sync_tool_testcases(uid, project_id, version):
         tool_site_domain = project_details.get('toolSiteDomain')
 
         testcases = db.get_testcases(project_id, version)
-        testcases = [tc for tc in testcases if not tc.get('deleted')]
+        testcases = [
+            tc for tc in testcases if not tc.get('deleted') and not tc.get('duplicate')
+        ]
 
         try:
             jira_issues = jira_client.search_issues_by_label(
@@ -357,5 +390,5 @@ def background_invoke_change_analysis_implicit_processing(project_id, version):
         db.update_version(
             project_id=project_id,
             version=version,
-            update_details={'status': 'ERR_CHANGE_ANALYSIS_IMPLICT'},
+            update_details={'status': 'ERR_CHANGE_ANALYSIS_IMPLICIT'},
         )
