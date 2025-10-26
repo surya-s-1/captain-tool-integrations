@@ -307,7 +307,7 @@ class FirestoreDB:
 
             new_version_ref = self.db.collection(
                 f'projects/{project_id}/versions'
-            ).document(f'v{new_version_id_num}')
+            ).document(f'{new_version_id_num}')
 
             new_version_ref.set(
                 {
