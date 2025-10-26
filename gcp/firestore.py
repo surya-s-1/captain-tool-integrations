@@ -87,7 +87,7 @@ class FirestoreDB:
             }
         )
 
-        versions_doc_ref = project_doc_ref.collection('versions').document('v1')
+        versions_doc_ref = project_doc_ref.collection('versions').document('1')
         versions_doc_ref.set(
             {
                 'version': versions_doc_ref.id,
@@ -302,7 +302,7 @@ class FirestoreDB:
             project_data = self.db.document(f'projects/{project_id}').get()
 
             prev_version_id: str = project_data.get('latest_version')
-            prev_version_id_num = int(prev_version_id[1:])
+            prev_version_id_num = int(prev_version_id)
             new_version_id_num = prev_version_id_num + 1
 
             new_version_ref = self.db.collection(

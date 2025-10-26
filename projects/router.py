@@ -231,7 +231,7 @@ def upload_documentation_for_a_project_version(
 
         execution = Execution(argument=json.dumps(message_data))
 
-        if version == 'v1':
+        if version == '1':
             request = CreateExecutionRequest(
                 parent=REQUIREMENTS_CREATION_WORFLOW, execution=execution
             )
@@ -861,6 +861,7 @@ async def create_new_version(
 
     try:
         prev_version, new_version = db.create_new_project_version(project_id, uid)
+        
         db.copy_requirements_and_testcases_with_history(
             project_id, prev_version, new_version
         )
