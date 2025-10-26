@@ -88,9 +88,7 @@ def background_creation_on_tool(uid, project_id, version):
         db.update_version(
             project_id=project_id,
             version=version,
-            update_details={
-                'status': 'UPDATE_DEP_TC_ON_TOOL'
-            },
+            update_details={'status': 'UPDATE_DEP_TC_ON_TOOL'},
         )
 
         try:
@@ -263,7 +261,66 @@ def background_creation_specific_testcase_on_tool(uid, project_id, version, tc_i
         )
 
 
-def background_zip_task(job_id: str, project_id: str, version: str, testcase_id: str):
+def background_document_zip_task(
+    job_id: str, project_id: str, version: str, doc_name: str
+):
+    '''
+    Background task to download GCS files and zip them.
+    The result is stored as a blob in the job document in Firestore.
+    '''
+    try:
+        db.update_download_job_status(job_id, 'in_progress')
+
+        version_data = db.get_version_details(project_id, version)
+
+        if not version_data or not version_data.get('files'):
+            db.update_download_job_status(job_id, 'failed', error='No documents found')
+            return
+
+        files = version_data.get('files', [])
+        docs = [item.get('url', '') for item in files if item.get('name') == doc_name]
+
+        if not docs:
+            db.update_download_job_status(job_id, 'failed', error='Specified document found')
+            return
+
+        zip_buffer = io.BytesIO()
+
+        zip_name = f'{doc_name}-{version}-{project_id}'
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for url in docs:
+                if not url.startswith('gs://'):
+                    continue
+
+                try:
+                    file_content = get_file_from_gcs(url)
+                    content_type = url.split('.')[-1]
+
+                    zip_file.writestr(f'{zip_name}.{content_type}', file_content)
+                except Exception as e:
+                    # Log the error and continue to the next file
+                    logger.warning(f'Failed to download {url}: {e}')
+
+        zip_buffer.seek(0)
+
+        upload_path = f'jobs/{job_id}/archive.zip'
+
+        zip_url = upload_file_to_gcs(zip_buffer, 'application/zip', upload_path)
+
+        db.update_download_job_status(
+            job_id, 'completed', file_name=f'{zip_name}.zip', result_url=zip_url
+        )
+
+    except Exception as e:
+        logger.error(f'Error in background zip task for job {job_id}: {e}')
+
+        db.update_download_job_status(job_id, 'failed', error=str(e))
+
+
+def background_testcase_zip_task(
+    job_id: str, project_id: str, version: str, testcase_id: str
+):
     '''
     Background task to download GCS files and zip them.
     The result is stored as a blob in the job document in Firestore.

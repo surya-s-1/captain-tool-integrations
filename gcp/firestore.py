@@ -225,7 +225,24 @@ class FirestoreDB:
         doc_ref.update(update_details)
 
     # --- New Methods for Async Job Management ---
-    def create_download_job(
+    def create_doc_download_job(self, uid: str, project_id: str, version: str, doc_name: str):
+        job_ref = self.db.collection('jobs').document()
+        job_ref.set(
+            {
+                'project_id': project_id,
+                'version': version,
+                'uploaded_doc_name': doc_name,
+                'uid': uid,
+                'job_id': job_ref.id,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'status': 'pending',
+                'created_at': firestore.SERVER_TIMESTAMP,
+            }
+        )
+
+        return job_ref.id
+
+    def create_testcase_download_job(
         self, uid: str, project_id: str, version: str, testcase_id: str
     ):
         '''

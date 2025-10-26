@@ -26,7 +26,8 @@ from projects.background_functions import (
     background_creation_on_tool,
     background_sync_tool_testcases,
     background_creation_specific_testcase_on_tool,
-    background_zip_task,
+    background_document_zip_task,
+    background_testcase_zip_task,
     background_zip_all_task,
     background_invoke_change_analysis_implicit_processing,
 )
@@ -606,6 +607,55 @@ def create_datasets_for_testcases(
 
 
 @router.post(
+    '/download/uploadedDocument',
+    status_code=status.HTTP_202_ACCEPTED,
+    description='Starts an asynchronous job to download and zip a specific uploaded document.',
+)
+async def initiate_download_dataset_job_for_one_document(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    project_id: str = Body(..., embed=True),
+    version: str = Body(..., embed=True),
+    documentName: str = Body(..., embed=True),
+):
+    '''
+    Starts an asynchronous job to download and zip a specific testcase's dataset.
+    '''
+    try:
+        if not project_id or not version or not documentName:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Project ID, version and document name are required.',
+            )
+
+        uid = user.get('uid', None)
+        job_id = db.create_doc_download_job(uid, project_id, version, documentName)
+
+        if not job_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail='Failed to create download job.',
+            )
+
+        background_tasks.add_task(
+            background_document_zip_task, job_id, project_id, version, documentName
+        )
+
+        return {'message': 'Download job started successfully', 'job_id': job_id}
+
+    except HTTPException as e:
+        raise e
+
+    except Exception as e:
+        logger.exception(f'Error in submit_download_job: {e}')
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to start download job.',
+        )
+
+
+@router.post(
     '/download/one',
     status_code=status.HTTP_202_ACCEPTED,
     description='Starts an asynchronous job to download and zip a specific testcase\'s dataset.',
@@ -621,8 +671,14 @@ async def initiate_download_dataset_job_for_one_testcase(
     Starts an asynchronous job to download and zip a specific testcase's dataset.
     '''
     try:
+        if not project_id or not version or not testcase_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Project ID, version and testcase id are required.',
+            )
+
         uid = user.get('uid', None)
-        job_id = db.create_download_job(uid, project_id, version, testcase_id)
+        job_id = db.create_testcase_download_job(uid, project_id, version, testcase_id)
 
         if not job_id:
             raise HTTPException(
@@ -631,7 +687,7 @@ async def initiate_download_dataset_job_for_one_testcase(
             )
 
         background_tasks.add_task(
-            background_zip_task, job_id, project_id, version, testcase_id
+            background_testcase_zip_task, job_id, project_id, version, testcase_id
         )
 
         return {'message': 'Download job started successfully', 'job_id': job_id}
@@ -844,7 +900,7 @@ async def get_testcases_filtered(
 async def create_new_version(
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
-    project_id: str = None
+    project_id: str = None,
 ):
     '''
     Creates a new version for a given project.
@@ -861,7 +917,7 @@ async def create_new_version(
 
     try:
         prev_version, new_version = db.create_new_project_version(project_id, uid)
-        
+
         db.copy_requirements_and_testcases_with_history(
             project_id, prev_version, new_version
         )
