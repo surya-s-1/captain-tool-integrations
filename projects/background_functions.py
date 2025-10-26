@@ -16,6 +16,7 @@ from tools.jira.client import JiraClient
 REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT = os.getenv(
     'REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT'
 )
+REQUIREMENTS_IMPLICIT_ENDPOINT = os.getenv('REQUIREMENTS_IMPLICIT_ENDPOINT')
 
 db = FirestoreDB()
 sm = SecretManager()
@@ -448,4 +449,39 @@ def background_invoke_change_analysis_implicit_processing(project_id, version):
             project_id=project_id,
             version=version,
             update_details={'status': 'ERR_CHANGE_ANALYSIS_IMPLICIT'},
+        )
+
+
+def background_invoke_implicit_processing(project_id, version):
+    try:
+        request = auth_requests.Request()
+        id_token = oauth2_id_token.fetch_id_token(
+            request, REQUIREMENTS_IMPLICIT_ENDPOINT
+        )
+
+        response = requests.post(
+            REQUIREMENTS_IMPLICIT_ENDPOINT,
+            headers={'Authorization': f'Bearer {id_token}'},
+            json={
+                'project_id': project_id,
+                'version': version,
+            },
+            timeout=900,
+        )
+
+        response.raise_for_status()
+
+        logging.info(
+            f'{REQUIREMENTS_IMPLICIT_ENDPOINT} responded with {response.status_code}'
+        )
+
+    except Exception as e:
+        logger.exception(
+            f'Error when invoking implicit req processor: {e}'
+        )
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'ERR_IMPLICIT_REQ_EXTRACT'},
         )

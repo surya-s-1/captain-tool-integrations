@@ -30,6 +30,7 @@ from projects.background_functions import (
     background_testcase_zip_task,
     background_zip_all_task,
     background_invoke_change_analysis_implicit_processing,
+    background_invoke_implicit_processing
 )
 
 from gcp.firestore import FirestoreDB
@@ -362,7 +363,54 @@ def mark_testcase_deleted(
 
 
 @router.post(
-    '/{project_id}/v/{version}/requirements/confirm',
+    '/{project_id}/v/{version}/requirements/explicit/confirm',
+    description='Confirm the extracted explicit requiremented',
+)
+def confirm_change_analysis(
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
+    project_id: str = None,
+    version: str = None,
+):
+    '''
+    Confirm the explicit requirements for a project version.
+    '''
+    if not project_id or not version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version are required.',
+        )
+
+    uid = user.get('uid')
+
+    try:
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={
+                'exp_requirements_confirmed_by': uid,
+            },
+        )
+
+        background_tasks.add_task(
+            background_invoke_implicit_processing,
+            project_id=project_id,
+            version=version,
+        )
+
+        return 'Request received'
+    except Exception as e:
+        logger.exception(f'Failed to confirm explicit requirements: {e}')
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Failed to confirm explicit requirements',
+        )
+
+
+@router.post(
+    '/{project_id}/v/{version}/requirements/all/confirm',
     description='Confirms the requirements for a project version and triggers the test case creation workflow.',
 )
 def confirm_requirements_and_trigger_testcase_creation(
