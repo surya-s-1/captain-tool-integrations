@@ -17,6 +17,8 @@ from fastapi import (
 from starlette.responses import StreamingResponse, PlainTextResponse
 
 from auth import get_current_user
+from projects.dependencies import check_if_latest_project_version
+
 from tools.jira.client import JiraClient
 
 from projects.models import ConnectProjectRequest, UpdateTestCaseRequest
@@ -175,6 +177,7 @@ def get_project_details(user: Dict = Depends(get_current_user), project_id: str 
 )
 def upload_documentation_for_a_project_version(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
     files: List[UploadFile] = File([]),
@@ -263,6 +266,7 @@ def upload_documentation_for_a_project_version(
 )
 def mark_requirement_deleted(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
     req_id: str = None,
@@ -310,6 +314,7 @@ def mark_requirement_deleted(
 )
 def mark_testcase_deleted(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
     tc_id: str = None,
@@ -361,6 +366,7 @@ def mark_testcase_deleted(
 )
 def confirm_requirements_and_trigger_testcase_creation(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
 ):
@@ -414,6 +420,7 @@ def confirm_requirements_and_trigger_testcase_creation(
 )
 def update_testcase(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
     testcase_id: str = None,
@@ -466,6 +473,7 @@ def update_testcase(
 def confirm_create_testcases_on_tool(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
 ):
@@ -492,6 +500,7 @@ def confirm_create_testcases_on_tool(
 def sync_testcases_on_tool(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
 ):
@@ -517,6 +526,7 @@ def sync_testcases_on_tool(
 )
 def create_testcase_on_tool(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
     testcase_id: str = None,
@@ -548,6 +558,7 @@ def create_testcase_on_tool(
 )
 def create_datasets_for_testcases(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
 ):
@@ -827,11 +838,13 @@ async def get_testcases_filtered(
 
 
 @router.post(
-    '/{project_id}/createNewVersion',
+    '/{project_id}/v/{version}/createNewVersion',
     description='Creates a new version for a given project.',
 )
 async def create_new_version(
-    user: Dict = Depends(get_current_user), project_id: str = None
+    user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
+    project_id: str = None
 ):
     '''
     Creates a new version for a given project.
@@ -872,6 +885,7 @@ async def create_new_version(
 @router.post('/{project_id}/v/{version}/changeAnalysisStatus/update')
 def update_change_analysis_status(
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
     requirement_id: str = Body(None),
@@ -917,6 +931,7 @@ def update_change_analysis_status(
 def confirm_change_analysis(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
 ):
