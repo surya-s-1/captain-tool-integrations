@@ -285,7 +285,7 @@ def mark_requirement_deleted(
     try:
         version_details = db.get_version_details(project_id, version)
 
-        if version_details.get('status', '') != 'CONFIRM_REQ_EXTRACT':
+        if version_details.get('status', '') not in ['CONFIRM_REQ_EXTRACT', 'CONFIRM_EXP_REQ_EXTRACT', 'CONFIRM_IMP_REQ_EXTRACT']:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail='You will be allowed to delete requirements only in confirm requirements state.',
