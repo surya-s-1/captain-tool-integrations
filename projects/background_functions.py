@@ -282,7 +282,9 @@ def background_document_zip_task(
         docs = [item.get('url', '') for item in files if item.get('name') == doc_name]
 
         if not docs:
-            db.update_download_job_status(job_id, 'failed', error='Specified document found')
+            db.update_download_job_status(
+                job_id, 'failed', error='Specified document found'
+            )
             return
 
         zip_buffer = io.BytesIO()
@@ -466,7 +468,7 @@ def background_invoke_implicit_processing(project_id, version):
                 'project_id': project_id,
                 'version': version,
             },
-            timeout=3600,
+            timeout=2400,
         )
 
         response.raise_for_status()
@@ -476,9 +478,7 @@ def background_invoke_implicit_processing(project_id, version):
         )
 
     except Exception as e:
-        logger.exception(
-            f'Error when invoking implicit req processor: {e}'
-        )
+        logger.exception(f'Error when invoking implicit req processor: {e}')
 
         db.update_version(
             project_id=project_id,
