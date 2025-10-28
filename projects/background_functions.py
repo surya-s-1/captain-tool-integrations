@@ -466,7 +466,7 @@ def background_invoke_implicit_processing(project_id, version):
                 'project_id': project_id,
                 'version': version,
             },
-            timeout=900,
+            timeout=3600,
         )
 
         response.raise_for_status()
@@ -483,5 +483,5 @@ def background_invoke_implicit_processing(project_id, version):
         db.update_version(
             project_id=project_id,
             version=version,
-            update_details={'status': 'ERR_IMPLICIT_REQ_EXTRACT'},
+            update_details={'status': 'ERR_IMP_REQ_EXTRACT'},
         )
