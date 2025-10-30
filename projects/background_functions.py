@@ -1,5 +1,6 @@
 import io
 import os
+import time
 import zipfile
 import logging
 import requests
@@ -11,6 +12,7 @@ from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
 from gcp.storage import upload_file_to_gcs, get_file_from_gcs
 
+from projects.utilities import map_testcase_to_jira_payload
 from tools.jira.client import JiraClient
 
 REQUIREMENTS_CHANGE_ANALYSIS_IMPLICIT_ENDPOINT = os.getenv(
@@ -25,176 +27,141 @@ jira_client = JiraClient()
 logger = logging.getLogger(__name__)
 
 
-def background_creation_on_tool(uid, project_id, version):
+def background_issue_creation_on_alm(uid, project_id, version):
+    '''
+    Incremental batch creation & syncing with Jira.
+    '''
     try:
         db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={
-                'status': 'START_TC_CREATION_ON_TOOL',
+            project_id,
+            version,
+            {
+                'status': 'START_ALM_ISSUE_CREATION',
                 'testcases_confirmed_by': uid,
             },
         )
 
         project_details = db.get_project_details(project_id)
 
-        if (
-            not project_details
-            or not project_details.get('toolSiteId')
-            or not project_details.get('toolSiteDomain')
-            or not project_details.get('toolProjectKey')
+        if not project_details or not all(
+            [
+                project_details.get(k, None)
+                for k in ['toolSiteId', 'toolSiteDomain', 'toolProjectKey']
+            ]
         ):
-            db.update_version(
-                project_id=project_id,
-                version=version,
-                update_details={'status': 'ERR_TC_CREATION_ON_TOOL'},
+            raise Exception(
+                f'Required project details not found:: toolSiteId: {project_details.get("toolSiteId", None)}, toolSiteDomain: {project_details.get("toolSiteDomain", None)}, toolProjectKey: {project_details.get("toolProjectKey", None)}'
             )
-            return
 
-        tool_site_id = project_details.get('toolSiteId')
-        tool_project_key = project_details.get('toolProjectKey')
-
-        batch_size = 40
+        alm_site_id = project_details['toolSiteId']
+        alm_project_key = project_details['toolProjectKey']
 
         testcases = db.get_testcases(project_id, version)
 
-        create_testcases = [
+        new_testcases = [
             tc
             for tc in testcases
             if not tc.get('deleted', False)
-            and not tc.get('duplicate', False)
-            and not tc.get('toolCreated') == 'SUCCESS'
             and tc.get('change_analysis_status') == 'NEW'
+            and tc.get('toolCreated') != 'SUCCESS'
         ]
 
-        for i in range(0, len(create_testcases), batch_size):
-            batch = create_testcases[i : i + batch_size]
+        db.update_version(
+            project_id,
+            version,
+            {'status': 'CREATE_ALM_NEW_ISSUES'},
+        )
+
+        batch_size = 40
+
+        for i in range(0, len(new_testcases), batch_size):
+            batch = new_testcases[i : i + batch_size]
+
+            issue_payloads = [
+                map_testcase_to_jira_payload(tc, alm_project_key) for tc in batch
+            ]
 
             try:
-                jira_client.create_bulk_testcases(
-                    uid, tool_site_id, tool_project_key, batch
+                jira_client.create_bulk_issues(uid, alm_site_id, issue_payloads)
+
+                background_sync_alm_testcases(
+                    uid=uid,
+                    project_id=project_id,
+                    version=version,
+                    project_details=project_details,
+                    testcase_ids=[tc['testcase_id'] for tc in batch],
                 )
 
             except Exception as e:
                 logger.exception(f'Error creating batch of test cases: {e}')
 
-        deprecated_testcases = [
+        dep_testcases = [
             tc
             for tc in testcases
             if not tc.get('deleted', False)
-            and not tc.get('duplicate', False)
             and tc.get('change_analysis_status') == 'DEPRECATED'
         ]
 
+        db.update_version(project_id, version, {'status': 'UPDATE_ALM_DEP_ISSUES'})
+
+        for tc in dep_testcases:
+            try:
+                jira_client.update_issue(
+                    uid,
+                    alm_site_id,
+                    tc.get('toolIssueKey'),
+                    {'summary': tc.get('title')},
+                )
+
+                time.sleep(0.5)
+            except Exception as e:
+                logger.exception(f'Error updating deprecated testcase: {e}')
+
         db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'UPDATE_DEP_TC_ON_TOOL'},
+            project_id, version, {'status': 'COMPLETE_ALM_ISSUE_CREATION'}
         )
-
-        try:
-            jira_client.update_bulk_testcases(
-                uid, tool_site_id, tool_project_key, deprecated_testcases
-            )
-
-        except Exception as e:
-            logger.exception(f'Error creating batch of test cases: {e}')
-
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'COMPLETE_TC_CREATION_ON_TOOL'},
-        )
-
-        background_sync_tool_testcases(uid=uid, project_id=project_id, version=version)
 
     except Exception as e:
         logger.exception(f'Error syncing test cases to Jira: {e}')
 
+        db.update_version(project_id, version, {'status': 'ERR_ALM_ISSUE_CREATION'})
 
-def background_sync_tool_testcases(uid, project_id, version):
+
+def background_sync_alm_testcases(
+    uid, project_id, version, project_details, testcase_ids
+):
+    '''
+    Syncs Firestore testcases with Jira issues incrementally or fully.
+    '''
     try:
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={
-                'status': 'START_TC_SYNC_WITH_TOOL',
-                'testcases_confirmed_by': uid,
-            },
+        tool_site_id = project_details['toolSiteId']
+        domain = project_details['toolSiteDomain']
+
+        jira_issues = jira_client.search_issues(
+            uid, domain, tool_site_id, 'labels = \'Created_by_Captain\''
         )
 
-        project_details = db.get_project_details(project_id)
-
-        if (
-            not project_details
-            or not project_details.get('toolSiteId')
-            or not project_details.get('toolSiteDomain')
-            or not project_details.get('toolProjectKey')
-        ):
-            db.update_version(
-                project_id=project_id,
-                version=version,
-                update_details={'status': 'ERR_TC_SYNC_WITH_TOOL'},
-            )
-            return
-
-        tool_site_id = project_details.get('toolSiteId')
-        tool_site_domain = project_details.get('toolSiteDomain')
-
-        testcases = db.get_testcases(project_id, version)
-        testcases = [
-            tc for tc in testcases if not tc.get('deleted') and not tc.get('duplicate')
-        ]
-
-        try:
-            jira_issues = jira_client.search_issues_by_label(
-                uid, tool_site_domain, tool_site_id, 'Created_by_Captain'
+        for tc_id in testcase_ids:
+            match = next(
+                (issue for issue in jira_issues if tc_id in issue.get('labels', [])),
+                None,
             )
 
-        except Exception as e:
-            logger.exception(f'Error getting issues from Jira: {e}')
-            db.update_version(
-                project_id=project_id,
-                version=version,
-                update_details={'status': 'ERR_TC_SYNC_WITH_TOOL'},
-            )
-            return
-
-        for testcase in testcases:
-            testcase_id = testcase.get('testcase_id')
-
-            if not testcase_id:
-                continue
-
-            found_match = False
-
-            for issue in jira_issues:
-                labels = issue.get('labels', [])
-
-                if testcase_id in labels:
-                    tool_key = issue.get('key', '')
-                    tool_link = issue.get('url', '')
-
-                    db.update_testcase(
-                        project_id,
-                        version,
-                        testcase_id,
-                        {
-                            'toolIssueKey': tool_key,
-                            'toolIssueLink': tool_link,
-                            'toolCreated': 'SUCCESS',
-                        },
-                    )
-
-                    found_match = True
-                    break
-
-            if not found_match:
+            if match:
                 db.update_testcase(
-                    project_id, version, testcase_id, {'toolCreated': 'FAILED'}
+                    project_id,
+                    version,
+                    tc_id,
+                    {
+                        'toolIssueKey': match['key'],
+                        'toolIssueLink': match['url'],
+                        'toolCreated': 'SUCCESS',
+                    },
                 )
-
-        db.update_version(project_id, version, {'status': 'COMPLETE_TC_SYNC_WITH_TOOL'})
+            else:
+                db.update_testcase(
+                    project_id, version, tc_id, {'toolCreated': 'FAILED'}
+                )
 
     except Exception as e:
         logger.exception(f'Error syncing test cases to Jira: {e}')
@@ -212,45 +179,40 @@ def background_creation_specific_testcase_on_tool(uid, project_id, version, tc_i
         ):
             return
 
-        tool_site_id = project_details.get('toolSiteId')
-        tool_site_domain = project_details.get('toolSiteDomain')
-        tool_project_key = project_details.get('toolProjectKey')
+        cloud_id = project_details.get('toolSiteId')
+        cloud_domain = project_details.get('toolSiteDomain')
+        cloud_project_key = project_details.get('toolProjectKey')
 
         testcase = db.get_testcase_details(project_id, version, tc_id)
-        testcase_id = testcase.get('testcase_id')
+        tc_id = testcase.get('testcase_id')
 
-        jira_client.create_one_testcase(uid, tool_site_id, tool_project_key, testcase)
-
-        jira_issues = jira_client.search_issues_by_label(
-            uid, tool_site_domain, tool_site_id, testcase_id
+        jira_client.create_issue(
+            uid, cloud_id, map_testcase_to_jira_payload(testcase, cloud_project_key)
         )
 
-        found_match = False
+        jira_issues = jira_client.search_issues(
+            uid, cloud_domain, cloud_id, f'labels = \'{tc_id}\''
+        )
 
-        for issue in jira_issues:
-            labels = issue.get('labels', [])
+        match = next(
+            (issue for issue in jira_issues if tc_id in issue.get('labels', [])),
+            None,
+        )
 
-            if testcase_id in labels:
-                tool_key = issue.get('key', '')
-                tool_link = issue.get('url', '')
-
-                db.update_testcase(
-                    project_id,
-                    version,
-                    testcase_id,
-                    {
-                        'toolIssueKey': tool_key,
-                        'toolIssueLink': tool_link,
-                        'toolCreated': 'SUCCESS',
-                    },
-                )
-
-                found_match = True
-                break
-
-        if not found_match:
+        if match:
             db.update_testcase(
-                project_id, version, testcase_id, {'toolCreated': 'FAILED'}
+                project_id,
+                version,
+                tc_id   ,
+                {
+                    'toolIssueKey': match['key'],
+                    'toolIssueLink': match['url'],
+                    'toolCreated': 'SUCCESS',
+                },
+            )
+        else:
+            db.update_testcase(
+                project_id, version, tc_id, {'toolCreated': 'FAILED'}
             )
 
     except Exception as e:

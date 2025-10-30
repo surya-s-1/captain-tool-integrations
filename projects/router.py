@@ -23,14 +23,14 @@ from tools.jira.client import JiraClient
 
 from projects.models import ConnectProjectRequest, UpdateTestCaseRequest
 from projects.background_functions import (
-    background_creation_on_tool,
-    background_sync_tool_testcases,
+    background_issue_creation_on_alm,
+    background_sync_alm_testcases,
     background_creation_specific_testcase_on_tool,
     background_document_zip_task,
     background_testcase_zip_task,
     background_zip_all_task,
     background_invoke_change_analysis_implicit_processing,
-    background_invoke_implicit_processing
+    background_invoke_implicit_processing,
 )
 
 from gcp.firestore import FirestoreDB
@@ -285,7 +285,11 @@ def mark_requirement_deleted(
     try:
         version_details = db.get_version_details(project_id, version)
 
-        if version_details.get('status', '') not in ['CONFIRM_REQ_EXTRACT', 'CONFIRM_EXP_REQ_EXTRACT', 'CONFIRM_IMP_REQ_EXTRACT']:
+        if version_details.get('status', '') not in [
+            'CONFIRM_REQ_EXTRACT',
+            'CONFIRM_EXP_REQ_EXTRACT',
+            'CONFIRM_IMP_REQ_EXTRACT',
+        ]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail='You will be allowed to delete requirements only in confirm requirements state.',
@@ -537,7 +541,9 @@ def confirm_create_testcases_on_tool(
 
     uid = user.get('uid', None)
 
-    background_tasks.add_task(background_creation_on_tool, uid, project_id, version)
+    background_tasks.add_task(
+        background_issue_creation_on_alm, uid, project_id, version
+    )
 
     return 'OK'
 
@@ -564,7 +570,7 @@ def sync_testcases_on_tool(
 
     uid = user.get('uid', None)
 
-    background_tasks.add_task(background_sync_tool_testcases, uid, project_id, version)
+    background_tasks.add_task(background_sync_alm_testcases, uid, project_id, version)
 
     return 'OK'
 

@@ -148,32 +148,23 @@ async def get_jira_user_projects(user: Dict = Depends(get_current_user)):
         )
 
     try:
-        access_token = jira_client.get_usage_access_token(uid)
-        if not access_token:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-
-        cloud_ids = jira_client.get_cloud_ids(access_token)
-
-        if cloud_ids.status_code == 401:
-            logger.warning('Jira access token expired, attempting to refresh...')
-
-            access_token = jira_client.get_usage_access_token(uid=uid, new_set=True)
-            cloud_ids = jira_client.get_cloud_ids(access_token)
-
-            if cloud_ids.status_code == 401:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-
+        cloud_ids = jira_client.get_cloud_ids(uid)
         cloud_ids = [
-            {'id': r['id'], 'name': r['name'], 'url': r['url']}
-            for r in cloud_ids.json()
+            {'id': r['id'], 'name': r['name'], 'url': r['url']} for r in cloud_ids
         ]
 
-        projects = jira_client.get_projects(access_token, cloud_ids)
+        projects = []
+        for cloud_id in cloud_ids:
+            cloud_projects = jira_client.get_projects(
+                uid=uid, cloud_id=cloud_id.get('id'), cloud_url=cloud_id.get('url')
+            )
+            projects.extend(cloud_projects)
 
         return projects
 
     except Exception as e:
         logger.exception('Error fetching Jira projects.')
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Failed to retrieve Jira projects.',
