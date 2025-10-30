@@ -37,10 +37,27 @@ def get_jira_requirement_payload(requirement, project_key):
     Maps internal requirement structure to a Jira issue payload.
     '''
 
+    req_id = requirement.get('requirement_id')
+    req_text = requirement.get('requirement', '')
+
     return {
         'fields': {
             'project': {'key': project_key},
-            'summary': requirement.get('requirement'),
+            'summary': (
+                f'[{req_id}] {req_text[:200]}...'
+                if len(req_text) > 200
+                else f'[{req_id}] {req_text}...'
+            ),
+            'description': {
+                'type': 'doc',
+                'version': 1,
+                'content': [
+                    {
+                        'type': 'paragraph',
+                        'content': [{'text': req_text, 'type': 'text'}],
+                    }
+                ],
+            },
             'issuetype': {'name': 'Task'},
             'priority': {'name': requirement.get('priority', 'Medium')},
             'labels': [
@@ -57,6 +74,7 @@ def get_jira_testcase_payload(testcase, req_issue_key, project_key):
     '''
     Maps internal testcase structure to a Jira issue payload.
     '''
+    title = testcase.get('title')
     description_text = testcase.get('description', '')
     acceptance = testcase.get('acceptance_criteria')
     if acceptance:
@@ -65,7 +83,7 @@ def get_jira_testcase_payload(testcase, req_issue_key, project_key):
     return {
         'fields': {
             'project': {'key': project_key},
-            'summary': testcase.get('title'),
+            'summary': title[:200] + '...' if len(title) > 200 else title,
             'description': {
                 'type': 'doc',
                 'version': 1,

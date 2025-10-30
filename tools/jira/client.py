@@ -203,6 +203,9 @@ class JiraClient:
             access_token = self.get_usage_access_token(uid, new_set=True)
             headers['Authorization'] = f'Bearer {access_token}'
             response = requests.post(url, headers=headers, data=json.dumps(payload))
+        
+        if response.status_code == 400 and response.json():
+            logger.error(response.json())
 
         response.raise_for_status()
 
