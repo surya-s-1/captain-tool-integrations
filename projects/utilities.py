@@ -242,8 +242,6 @@ def background_issue_creation_on_alm(uid, project_id, version):
             and req.get('toolCreated', '') != 'SUCCESS'
         ]
 
-        new_requirements = new_requirements[0:2]
-
         batch_size = 40
         req_keys = {}
 
@@ -283,8 +281,6 @@ def background_issue_creation_on_alm(uid, project_id, version):
             if tc.get('change_analysis_status') == 'NEW'
             and tc.get('toolCreated') != 'SUCCESS'
         ]
-
-        new_testcases = new_testcases[0:2]
 
         for i in range(0, len(new_testcases), batch_size):
             batch = new_testcases[i : i + batch_size]
