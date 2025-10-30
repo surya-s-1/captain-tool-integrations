@@ -84,7 +84,7 @@ def background_issue_creation_on_alm(uid, project_id, version):
             try:
                 jira_client.create_bulk_issues(uid, alm_site_id, issue_payloads)
 
-                background_sync_alm_testcases(
+                sync_testcases_on_alm(
                     uid=uid,
                     project_id=project_id,
                     version=version,
@@ -127,9 +127,7 @@ def background_issue_creation_on_alm(uid, project_id, version):
         db.update_version(project_id, version, {'status': 'ERR_ALM_ISSUE_CREATION'})
 
 
-def background_sync_alm_testcases(
-    uid, project_id, version, project_details, testcase_ids
-):
+def sync_testcases_on_alm(uid, project_id, version, project_details, testcase_ids):
     '''
     Syncs Firestore testcases with Jira issues incrementally or fully.
     '''
@@ -203,7 +201,7 @@ def background_creation_specific_testcase_on_tool(uid, project_id, version, tc_i
             db.update_testcase(
                 project_id,
                 version,
-                tc_id   ,
+                tc_id,
                 {
                     'toolIssueKey': match['key'],
                     'toolIssueLink': match['url'],
@@ -211,9 +209,7 @@ def background_creation_specific_testcase_on_tool(uid, project_id, version, tc_i
                 },
             )
         else:
-            db.update_testcase(
-                project_id, version, tc_id, {'toolCreated': 'FAILED'}
-            )
+            db.update_testcase(project_id, version, tc_id, {'toolCreated': 'FAILED'})
 
     except Exception as e:
         logger.exception(f'Error creating test case: {e}')

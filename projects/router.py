@@ -24,7 +24,7 @@ from tools.jira.client import JiraClient
 from projects.models import ConnectProjectRequest, UpdateTestCaseRequest
 from projects.background_functions import (
     background_issue_creation_on_alm,
-    background_sync_alm_testcases,
+    sync_testcases_on_alm,
     background_creation_specific_testcase_on_tool,
     background_document_zip_task,
     background_testcase_zip_task,
@@ -549,28 +549,29 @@ def confirm_create_testcases_on_tool(
 
 
 @router.post(
-    '/{project_id}/v/{version}/testcases/sync',
+    '/{project_id}/v/{version}/t/{testcase_id}/sync',
     description='Syncs the testcases with the app.',
 )
 def sync_testcases_on_tool(
-    background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
     version: str = None,
+    testcase_id: str = None,
 ):
     '''
     Syncs the testcases with the app.
     '''
-    if not project_id or not version:
+    if not project_id or not version or not testcase_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Project ID and version are required.',
+            detail='Project ID, version and testcase are required.',
         )
 
     uid = user.get('uid', None)
+    project_details = db.get_project_details(project_id)
 
-    background_tasks.add_task(background_sync_alm_testcases, uid, project_id, version)
+    sync_testcases_on_alm(uid, project_id, version, project_details, [testcase_id])
 
     return 'OK'
 
