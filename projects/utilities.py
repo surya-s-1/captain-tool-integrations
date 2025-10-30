@@ -62,7 +62,7 @@ def get_jira_testcase_payload(testcase, req_issue_key, project_key):
     if acceptance:
         description_text += f'\n\n*Acceptance Criteria:*\n{acceptance}'
 
-    payload = {
+    return {
         'fields': {
             'project': {'key': project_key},
             'summary': testcase.get('title'),
@@ -87,10 +87,6 @@ def get_jira_testcase_payload(testcase, req_issue_key, project_key):
             ],
         }
     }
-
-    logger.info(f'{payload}')
-
-    return payload
 
 
 def sync_entities_on_alm(
@@ -184,7 +180,6 @@ def sync_entities_on_alm(
 
 
 def get_req_issue_key(project_id, version, req_keys, testcase):
-    logger.info(f'testcase: {testcase.get("testcase_id")}')
     req_id = testcase.get('requirement_id')
 
     if req_id in req_keys:
@@ -270,8 +265,6 @@ def background_issue_creation_on_alm(uid, project_id, version):
                     project_details=project_details,
                     entity_ids=[req['requirement_id'] for req in batch],
                 )
-
-                logger.info(f'{req_keys}')
 
             except Exception as e:
                 logger.exception(f'Error creating batch of requirements: {e}')
