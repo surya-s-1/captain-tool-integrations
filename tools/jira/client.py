@@ -134,7 +134,7 @@ class JiraClient:
             access_token = self.get_usage_access_token(uid=uid, new_set=True)
             headers['Authorization'] = access_token
             response = requests.get(url, headers=headers)
-        
+
         response.raise_for_status()
 
         current_projects = response.json().get('values', [])

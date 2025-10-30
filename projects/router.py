@@ -22,10 +22,11 @@ from projects.dependencies import check_if_latest_project_version
 from tools.jira.client import JiraClient
 
 from projects.models import ConnectProjectRequest, UpdateTestCaseRequest
-from projects.background_functions import (
+from projects.utilities import (
     background_issue_creation_on_alm,
-    sync_testcases_on_alm,
-    background_creation_specific_testcase_on_tool,
+    sync_entities_on_alm,
+    create_one_testcase_on_alm,
+    create_one_requirement_on_alm,
     background_document_zip_task,
     background_testcase_zip_task,
     background_zip_all_task,
@@ -549,8 +550,43 @@ def confirm_create_testcases_on_tool(
 
 
 @router.post(
-    '/{project_id}/v/{version}/t/{testcase_id}/sync',
+    '/{project_id}/v/{version}/r/{requirement_id}/sync/one',
     description='Syncs the testcases with the app.',
+)
+def sync_testcases_on_tool(
+    user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
+    project_id: str = None,
+    version: str = None,
+    requirement_id: str = None,
+):
+    '''
+    Syncs the requirement with the app.
+    '''
+    if not project_id or not version or not requirement_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID, version and requirement_id are required.',
+        )
+
+    uid = user.get('uid', None)
+    project_details = db.get_project_details(project_id)
+
+    sync_entities_on_alm(
+        uid=uid,
+        project_id=project_id,
+        version=version,
+        project_details=project_details,
+        entity_name='requirements',
+        entity_ids=[requirement_id],
+    )
+
+    return 'OK'
+
+
+@router.post(
+    '/{project_id}/v/{version}/t/{testcase_id}/sync/one',
+    description='Syncs the testcase with the app.',
 )
 def sync_testcases_on_tool(
     user: Dict = Depends(get_current_user),
@@ -560,7 +596,7 @@ def sync_testcases_on_tool(
     testcase_id: str = None,
 ):
     '''
-    Syncs the testcases with the app.
+    Syncs the testcase with the app.
     '''
     if not project_id or not version or not testcase_id:
         raise HTTPException(
@@ -571,14 +607,53 @@ def sync_testcases_on_tool(
     uid = user.get('uid', None)
     project_details = db.get_project_details(project_id)
 
-    sync_testcases_on_alm(uid, project_id, version, project_details, [testcase_id])
+    sync_entities_on_alm(
+        uid=uid,
+        project_id=project_id,
+        version=version,
+        project_details=project_details,
+        entity_name='testcases',
+        entity_ids=[testcase_id],
+    )
+
+    return 'OK'
+
+
+@router.post(
+    '/{project_id}/v/{version}/r/{requirement_id}/create/one',
+    description='Creates a specific requirement in ALM tool',
+)
+def create_testcase_on_tool(
+    user: Dict = Depends(get_current_user),
+    is_latest_version: bool = Depends(check_if_latest_project_version),
+    project_id: str = None,
+    version: str = None,
+    requirement_id: str = None,
+):
+    '''
+    Initiates requirement creation in ALM.
+    '''
+    if not project_id or not version or not requirement_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Project ID and version and requirement_id are required.',
+        )
+
+    uid = user.get('uid', None)
+
+    create_one_requirement_on_alm(
+        uid=uid,
+        project_id=project_id,
+        version=version,
+        req_id=requirement_id,
+    )
 
     return 'OK'
 
 
 @router.post(
     '/{project_id}/v/{version}/t/{testcase_id}/create/one',
-    description='Creates a specific test cases in ALM tool as a background task.',
+    description='Creates a specific test case in ALM tool',
 )
 def create_testcase_on_tool(
     user: Dict = Depends(get_current_user),
@@ -588,7 +663,7 @@ def create_testcase_on_tool(
     testcase_id: str = None,
 ):
     '''
-    Confirms test cases and initiates their creation in tool as a background task.
+    Initiates test case creation in tool as a background task.
     '''
     if not project_id or not version or not testcase_id:
         raise HTTPException(
@@ -598,7 +673,7 @@ def create_testcase_on_tool(
 
     uid = user.get('uid', None)
 
-    background_creation_specific_testcase_on_tool(
+    create_one_testcase_on_alm(
         uid=uid,
         project_id=project_id,
         version=version,

@@ -150,27 +150,38 @@ class FirestoreDB:
         '''
         Fetches all requirements for a given project and version.
         '''
-        collection_ref = (
-            self.db.collection('projects')
-            .document(project_id)
-            .collection('versions')
-            .document(version_id)
-            .collection('requirements')
-        )
+        collection_ref = self.db.collection(
+            'projects', project_id, 'versions', version_id, 'requirements'
+        ).where('deleted', '==', False).where('duplicate', '==', False)
+
         return [doc.to_dict() for doc in collection_ref.get()]
 
     def get_testcases(self, project_id, version_id):
         '''
         Fetches all test cases for a given project and version.
         '''
-        collection_ref = (
+        collection_ref = self.db.collection(
+            'projects', project_id, 'versions', version_id, 'testcases'
+        ).where('deleted', '==', False)
+
+        return [doc.to_dict() for doc in collection_ref.get()]
+
+    def get_requirement_details(self, project_id, version_id, requirement_id):
+        '''
+        Fetches a specific test case document.
+        '''
+        doc_ref = (
             self.db.collection('projects')
             .document(project_id)
             .collection('versions')
             .document(version_id)
-            .collection('testcases')
+            .collection('requirements')
+            .document(requirement_id)
         )
-        return [doc.to_dict() for doc in collection_ref.get()]
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
 
     def get_testcase_details(self, project_id, version_id, testcase_id):
         '''
@@ -225,7 +236,9 @@ class FirestoreDB:
         doc_ref.update(update_details)
 
     # --- New Methods for Async Job Management ---
-    def create_doc_download_job(self, uid: str, project_id: str, version: str, doc_name: str):
+    def create_doc_download_job(
+        self, uid: str, project_id: str, version: str, doc_name: str
+    ):
         job_ref = self.db.collection('jobs').document()
         job_ref.set(
             {
