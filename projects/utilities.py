@@ -4,6 +4,7 @@ import time
 import zipfile
 import logging
 import requests
+import concurrent.futures
 from fastapi import HTTPException, status
 import google.auth.transport.requests as auth_requests
 import google.oauth2.id_token as oauth2_id_token
@@ -204,13 +205,98 @@ def get_req_issue_key(project_id, version, req_keys, testcase):
         return req_keys[req_id]
 
     req_details = db.get_requirement_details(
-        project_id=project_id, version_id=version, requirement_id=testcase.get('requirement_id')
+        project_id=project_id,
+        version_id=version,
+        requirement_id=testcase.get('requirement_id'),
     )
 
     if not req_details:
         return None
 
     return req_details.get('toolIssueKey', None)
+
+
+def process_req_batch(
+    batch, uid, cloud_id, alm_project_key, project_id, version, project_details
+):
+    issue_payloads = [
+        get_jira_requirement_payload(req, alm_project_key) for req in batch
+    ]
+    try:
+        # Create issues
+        jira_client.create_bulk_issues(uid, cloud_id, issue_payloads)
+
+        time.sleep(2.5)
+        logger.info('Waiting for 2.5 seconds before syncing requirements')
+
+        # Sync entities and return the keys
+        return sync_entities_on_alm(
+            uid=uid,
+            project_id=project_id,
+            version=version,
+            entity_name='requirements',
+            project_details=project_details,
+            entity_ids=[req['requirement_id'] for req in batch],
+        )
+
+    except Exception as e:
+        logger.exception(f'Error creating batch of requirements: {e}')
+        return {}  # Return an empty dict on failure
+
+
+def process_tc_batch(
+    batch,
+    uid,
+    cloud_id,
+    alm_project_key,
+    project_id,
+    version,
+    project_details,
+    req_keys,
+):
+    issue_payloads = [
+        get_jira_testcase_payload(
+            tc,
+            get_req_issue_key(project_id, version, req_keys, tc),
+            alm_project_key,
+        )
+        for tc in batch
+    ]
+
+    try:
+        # Create issues
+        jira_client.create_bulk_issues(uid, cloud_id, issue_payloads)
+
+        time.sleep(2.5)
+        logger.info('Waiting for 2.5 seconds before syncing testcases')
+
+        # Sync entities
+        sync_entities_on_alm(
+            uid=uid,
+            project_id=project_id,
+            version=version,
+            entity_name='testcases',
+            project_details=project_details,
+            entity_ids=[tc['testcase_id'] for tc in batch],
+        )
+    except Exception as e:
+        logger.exception(f'Error creating batch of test cases: {e}')
+
+
+def update_deprecated_tc(tc, uid, cloud_id):
+    try:
+        jira_client.update_issue(
+            uid,
+            cloud_id,
+            tc.get('toolIssueKey'),
+            {
+                'summary': tc.get('title')
+            },  # Assuming this is the update that indicates deprecation
+        )
+
+        time.sleep(0.5)
+    except Exception as e:
+        logger.exception(f'Error updating deprecated testcase: {e}')
 
 
 def background_issue_creation_on_alm(uid, project_id, version):
@@ -263,27 +349,28 @@ def background_issue_creation_on_alm(uid, project_id, version):
         batch_size = 40
         req_keys = {}
 
-        for i in range(0, len(new_requirements), batch_size):
-            batch = new_requirements[i : i + batch_size]
-
-            issue_payloads = [
-                get_jira_requirement_payload(req, alm_project_key) for req in batch
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(
+                    process_req_batch,
+                    new_requirements[i : i + batch_size],
+                    uid,
+                    cloud_id,
+                    alm_project_key,
+                    project_id,
+                    version,
+                    project_details,
+                )
+                for i in range(0, len(new_requirements), batch_size)
             ]
 
-            try:
-                jira_client.create_bulk_issues(uid, cloud_id, issue_payloads)
-
-                req_keys = sync_entities_on_alm(
-                    uid=uid,
-                    project_id=project_id,
-                    version=version,
-                    entity_name='requirements',
-                    project_details=project_details,
-                    entity_ids=[req['requirement_id'] for req in batch],
-                )
-
-            except Exception as e:
-                logger.exception(f'Error creating batch of requirements: {e}')
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    req_keys.update(future.result())
+                except Exception as e:
+                    logger.exception(
+                        f'Error retrieving result from requirement batch: {e}'
+                    )
 
         db.update_version(
             project_id,
@@ -300,32 +387,25 @@ def background_issue_creation_on_alm(uid, project_id, version):
             and tc.get('toolCreated') != 'SUCCESS'
         ]
 
-        for i in range(0, len(new_testcases), batch_size):
-            batch = new_testcases[i : i + batch_size]
-
-            issue_payloads = [
-                get_jira_testcase_payload(
-                    tc,
-                    get_req_issue_key(project_id, version, req_keys, tc),
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(
+                    process_tc_batch,
+                    new_testcases[i : i + batch_size],
+                    uid,
+                    cloud_id,
                     alm_project_key,
+                    project_id,
+                    version,
+                    project_details,
+                    req_keys
                 )
-                for tc in batch
+                for i in range(0, len(new_testcases), batch_size)
             ]
 
-            try:
-                jira_client.create_bulk_issues(uid, cloud_id, issue_payloads)
+            concurrent.futures.wait(futures)
 
-                sync_entities_on_alm(
-                    uid=uid,
-                    project_id=project_id,
-                    version=version,
-                    entity_name='testcases',
-                    project_details=project_details,
-                    entity_ids=[tc['testcase_id'] for tc in batch],
-                )
-
-            except Exception as e:
-                logger.exception(f'Error creating batch of test cases: {e}')
+        db.update_version(project_id, version, {'status': 'UPDATE_ALM_DEP_ISSUES'})
 
         dep_testcases = [
             tc
@@ -334,20 +414,12 @@ def background_issue_creation_on_alm(uid, project_id, version):
             and tc.get('change_analysis_status') == 'DEPRECATED'
         ]
 
-        db.update_version(project_id, version, {'status': 'UPDATE_ALM_DEP_ISSUES'})
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(update_deprecated_tc, tc, uid, cloud_id) for tc in dep_testcases
+            ]
 
-        for tc in dep_testcases:
-            try:
-                jira_client.update_issue(
-                    uid,
-                    cloud_id,
-                    tc.get('toolIssueKey'),
-                    {'summary': tc.get('title')},
-                )
-
-                time.sleep(0.5)
-            except Exception as e:
-                logger.exception(f'Error updating deprecated testcase: {e}')
+            concurrent.futures.wait(futures)
 
         db.update_version(
             project_id, version, {'status': 'COMPLETE_ALM_ISSUE_CREATION'}
