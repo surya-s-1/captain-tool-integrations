@@ -186,6 +186,8 @@ class JiraClient:
     # ---------- PRIVATE HELPERS ----------
 
     def _post(self, uid, cloud_id, endpoint, payload):
+        logger.debug(f'Making POST request to Jira API: {endpoint}')
+
         access_token = self.get_usage_access_token(uid)
 
         headers = {
@@ -203,7 +205,7 @@ class JiraClient:
             access_token = self.get_usage_access_token(uid, new_set=True)
             headers['Authorization'] = f'Bearer {access_token}'
             response = requests.post(url, headers=headers, data=json.dumps(payload))
-        
+
         if response.status_code == 400 and response.json():
             logger.error(response.json())
 
@@ -212,6 +214,8 @@ class JiraClient:
         return response.json() if response.content else {}
 
     def _put(self, uid, cloud_id, endpoint, payload, new_set=False):
+        logger.debug(f'Making PUT request to Jira API: {endpoint}')
+
         access_token = self.get_usage_access_token(uid, new_set=new_set)
 
         headers = {

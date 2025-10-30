@@ -115,6 +115,9 @@ def sync_entities_on_alm(
     Syncs Firestore testcases with Jira issues incrementally or fully.
     '''
     try:
+        if entity_name not in ['testcases', 'requirements']:
+            return
+
         cloud_id = project_details['toolSiteId']
         cloud_domain = project_details['toolSiteDomain']
 
@@ -126,9 +129,12 @@ def sync_entities_on_alm(
                 uid, cloud_domain, cloud_id, f'labels = \'{entity_ids[0]}\''
             )
         else:
-            jira_issues = jira_client.search_issues(
-                uid, cloud_domain, cloud_id, 'labels = \'Created_by_Captain\''
-            )
+            if entity_name == 'requirements':
+                jql = 'labels in (\'Created_by_Captain\', \'Requirement\') AND labels = \'Created_by_Captain\' AND labels = \'Requirement\''
+            else:
+                jql = 'labels in (\'Created_by_Captain\', \'Testcase\') AND labels = \'Created_by_Captain\' AND labels = \'Testcase\''
+
+            jira_issues = jira_client.search_issues(uid, cloud_domain, cloud_id, jql)
 
         results = {}
 
@@ -162,8 +168,7 @@ def sync_entities_on_alm(
                     )
 
             return results
-
-        if entity_name == 'requirements':
+        else:
             for req_id in entity_ids:
                 match = next(
                     (
@@ -219,6 +224,8 @@ def get_req_issue_key(project_id, version, req_keys, testcase):
 def process_req_batch(
     batch, uid, cloud_id, alm_project_key, project_id, version, project_details
 ):
+    logger.info(f'Processing batch of {len(batch)} requirements: {[req.get('requirement_id', '') for req in batch]}')
+
     issue_payloads = [
         get_jira_requirement_payload(req, alm_project_key) for req in batch
     ]
@@ -254,6 +261,10 @@ def process_tc_batch(
     project_details,
     req_keys,
 ):
+    logger.info(
+        f'Processing batch of {len(batch)} testcases: {[tc.get('testcase_id', '') for tc in batch]}'
+    )
+
     issue_payloads = [
         get_jira_testcase_payload(
             tc,
@@ -337,13 +348,12 @@ def background_issue_creation_on_alm(uid, project_id, version):
             {'status': 'CREATE_ALM_NEW_REQUIREMENTS'},
         )
 
-        requirements = db.get_requirements(project_id, version)
+        requirements = db.get_requirements(project_id, version, change_analysis_status='NEW')
 
         new_requirements = [
             req
             for req in requirements
-            if req.get('change_analysis_status') == 'NEW'
-            and req.get('toolCreated', '') != 'SUCCESS'
+            if req.get('toolCreated', '') != 'SUCCESS'
         ]
 
         batch_size = 40
@@ -378,13 +388,12 @@ def background_issue_creation_on_alm(uid, project_id, version):
             {'status': 'CREATE_ALM_NEW_TESTCASES'},
         )
 
-        testcases = db.get_testcases(project_id, version)
+        testcases = db.get_testcases(project_id, version, change_analysis_status='NEW')
 
         new_testcases = [
             tc
             for tc in testcases
-            if tc.get('change_analysis_status') == 'NEW'
-            and tc.get('toolCreated') != 'SUCCESS'
+            if tc.get('toolCreated') != 'SUCCESS'
         ]
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -407,12 +416,9 @@ def background_issue_creation_on_alm(uid, project_id, version):
 
         db.update_version(project_id, version, {'status': 'UPDATE_ALM_DEP_ISSUES'})
 
-        dep_testcases = [
-            tc
-            for tc in testcases
-            if not tc.get('deleted', False)
-            and tc.get('change_analysis_status') == 'DEPRECATED'
-        ]
+        dep_testcases = db.get_testcases(
+            project_id, version, change_analysis_status='DEPRECATED'
+        )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [

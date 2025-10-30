@@ -146,23 +146,70 @@ class FirestoreDB:
             return doc.to_dict()
         return None
 
-    def get_requirements(self, project_id, version_id):
+    def get_requirements(
+        self,
+        project_id,
+        version_id,
+        deleted=False,
+        duplicate=False,
+        change_analysis_status=None
+    ):
         '''
         Fetches all requirements for a given project and version.
         '''
         collection_ref = self.db.collection(
             'projects', project_id, 'versions', version_id, 'requirements'
-        ).where('deleted', '==', False).where('duplicate', '==', False)
+        )
+
+        if not deleted:
+            collection_ref = collection_ref.where('deleted', '==', False)
+
+        if not duplicate:
+            collection_ref = collection_ref.where('duplicate', '==', False)
+
+        if change_analysis_status is not None:
+            collection_ref = collection_ref.where(
+                'change_analysis_status', '==', change_analysis_status
+            )
+
+        collection_ref = collection_ref.select(
+            [
+                'requirement_id',
+                'requirement',
+                'deleted',
+                'duplicate',
+                'change_analysis_status',
+                'sources',
+                'regulations',
+                'toolCreated',
+                'toolIssueKey',
+                'toolIssueLink',
+            ]
+        )
 
         return [doc.to_dict() for doc in collection_ref.get()]
 
-    def get_testcases(self, project_id, version_id):
+    def get_testcases(
+        self,
+        project_id,
+        version_id,
+        deleted=False,
+        change_analysis_status=None,
+    ):
         '''
         Fetches all test cases for a given project and version.
         '''
         collection_ref = self.db.collection(
             'projects', project_id, 'versions', version_id, 'testcases'
-        ).where('deleted', '==', False)
+        )
+
+        if not deleted:
+            collection_ref = collection_ref.where('deleted', '==', False)
+
+        if change_analysis_status is not None:
+            collection_ref = collection_ref.where(
+                'change_analysis_status', '==', change_analysis_status
+            )
 
         return [doc.to_dict() for doc in collection_ref.get()]
 
