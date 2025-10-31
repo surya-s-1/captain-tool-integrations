@@ -38,17 +38,15 @@ def get_jira_requirement_payload(requirement, project_key):
     Maps internal requirement structure to a Jira issue payload.
     '''
 
-    requirement_category = requirement.get('requirement_category')
+    requirement_category = requirement.get('requirement_category', '')
     req_text = requirement.get('requirement', '')
+
+    title = f'[{requirement_category}] {req_text}'
 
     return {
         'fields': {
             'project': {'key': project_key},
-            'summary': (
-                f'[{requirement_category}] {req_text[:200]}...'
-                if len(req_text) > 200
-                else f'[{requirement_category}] {req_text}...'
-            ),
+            'summary': f'{title[:200]}...' if len(title) > 200 else title,
             'description': {
                 'type': 'doc',
                 'version': 1,
