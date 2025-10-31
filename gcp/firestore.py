@@ -176,6 +176,7 @@ class FirestoreDB:
             [
                 'requirement_id',
                 'requirement',
+                'requirement_category',
                 'deleted',
                 'duplicate',
                 'change_analysis_status',
