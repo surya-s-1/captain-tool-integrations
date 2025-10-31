@@ -487,7 +487,7 @@ class FirestoreDB:
                 copy_count += 1
                 batch_size += 1
 
-                if batch_size >= 499:
+                if batch_size >= 25:
                     logger.info(f'Committing batch of {batch_size} documents...')
                     batch.commit()
                     batch = self.db.batch()  # Start a new batch
