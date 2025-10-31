@@ -6,6 +6,8 @@ from google.cloud import firestore
 
 GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 FIRESTORE_DATABASE = os.getenv('FIRESTORE_DATABASE')
+FIRESTORE_BATCH_COMMIT_SIZE = int(os.getenv('FIRESTORE_BATCH_COMMIT_SIZE', '10'))
+
 REQUIREMENTS_COLLECTION = 'requirements'
 TESTCASES_COLLECTION = 'testcases'
 
@@ -488,7 +490,7 @@ class FirestoreDB:
                 copy_count += 1
                 batch_size += 1
 
-                if batch_size >= 25:
+                if batch_size >= FIRESTORE_BATCH_COMMIT_SIZE:
                     logger.info(f'Committing batch of {batch_size} documents...')
                     batch.commit()
                     batch = self.db.batch()  # Start a new batch
@@ -533,7 +535,7 @@ class FirestoreDB:
                 copy_count += 1
                 batch_size += 1
 
-                if batch_size >= 499:
+                if batch_size >= FIRESTORE_BATCH_COMMIT_SIZE:
                     logger.info(f'Committing batch of {batch_size} documents...')
                     batch.commit()
                     batch = self.db.batch()  # Start a new batch
