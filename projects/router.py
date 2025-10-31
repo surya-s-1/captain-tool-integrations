@@ -292,7 +292,7 @@ def mark_requirement_deleted(
         version_details = db.get_version_details(project_id, version)
 
         if version_details.get('status', '') not in [
-            'CONFIRM_REQ_EXTRACT',
+            'CONFIRM_CHANGE_ANALYSIS_EXPLICIT',
             'CONFIRM_EXP_REQ_EXTRACT',
             'CONFIRM_IMP_REQ_EXTRACT',
         ]:

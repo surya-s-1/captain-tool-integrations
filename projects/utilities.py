@@ -677,6 +677,38 @@ def background_zip_all_task(job_id: str, project_id: str, version: str):
         logger.exception(f'Error in background zip task for job {job_id}: {e}')
         db.update_download_job_status(job_id, 'failed', error=str(e))
 
+def background_invoke_implicit_processing(project_id, version):
+    try:
+        request = auth_requests.Request()
+        id_token = oauth2_id_token.fetch_id_token(
+            request, REQUIREMENTS_IMPLICIT_ENDPOINT
+        )
+
+        response = requests.post(
+            REQUIREMENTS_IMPLICIT_ENDPOINT,
+            headers={'Authorization': f'Bearer {id_token}'},
+            json={
+                'project_id': project_id,
+                'version': version,
+            },
+            timeout=3000,
+        )
+
+        response.raise_for_status()
+
+        logging.info(
+            f'{REQUIREMENTS_IMPLICIT_ENDPOINT} responded with {response.status_code}'
+        )
+
+    except Exception as e:
+        logger.exception(f'Error when invoking implicit req processor: {e}')
+
+        db.update_version(
+            project_id=project_id,
+            version=version,
+            update_details={'status': 'ERR_IMP_REQ_EXTRACT'},
+        )
+
 
 def background_invoke_change_analysis_implicit_processing(project_id, version):
     try:
@@ -692,7 +724,7 @@ def background_invoke_change_analysis_implicit_processing(project_id, version):
                 'project_id': project_id,
                 'version': version,
             },
-            timeout=600,
+            timeout=3000,
         )
 
         response.raise_for_status()
@@ -710,37 +742,4 @@ def background_invoke_change_analysis_implicit_processing(project_id, version):
             project_id=project_id,
             version=version,
             update_details={'status': 'ERR_CHANGE_ANALYSIS_IMPLICIT'},
-        )
-
-
-def background_invoke_implicit_processing(project_id, version):
-    try:
-        request = auth_requests.Request()
-        id_token = oauth2_id_token.fetch_id_token(
-            request, REQUIREMENTS_IMPLICIT_ENDPOINT
-        )
-
-        response = requests.post(
-            REQUIREMENTS_IMPLICIT_ENDPOINT,
-            headers={'Authorization': f'Bearer {id_token}'},
-            json={
-                'project_id': project_id,
-                'version': version,
-            },
-            timeout=2400,
-        )
-
-        response.raise_for_status()
-
-        logging.info(
-            f'{REQUIREMENTS_IMPLICIT_ENDPOINT} responded with {response.status_code}'
-        )
-
-    except Exception as e:
-        logger.exception(f'Error when invoking implicit req processor: {e}')
-
-        db.update_version(
-            project_id=project_id,
-            version=version,
-            update_details={'status': 'ERR_IMP_REQ_EXTRACT'},
         )
