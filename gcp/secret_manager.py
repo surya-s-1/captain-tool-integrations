@@ -1,7 +1,16 @@
 from google.cloud import secretmanager
+import logging
 import os
 
 GOOGLE_CLOUD_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 class SecretManager:
     '''
@@ -28,7 +37,7 @@ class SecretManager:
         try:
             self.client.get_secret(request={'name': secret_path})
         except Exception:
-            print(f'Secret \'{secret_name}\' not found. Creating a new one...')
+            logger.info(f'Secret \'{secret_name}\' not found. Creating a new one...')
             self.client.create_secret(
                 request={
                     'parent': parent,

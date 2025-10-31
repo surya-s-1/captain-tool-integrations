@@ -38,16 +38,16 @@ def get_jira_requirement_payload(requirement, project_key):
     Maps internal requirement structure to a Jira issue payload.
     '''
 
-    req_id = requirement.get('requirement_id')
+    requirement_category = requirement.get('requirement_category')
     req_text = requirement.get('requirement', '')
 
     return {
         'fields': {
             'project': {'key': project_key},
             'summary': (
-                f'[{req_id}] {req_text[:200]}...'
+                f'[{requirement_category}] {req_text[:200]}...'
                 if len(req_text) > 200
-                else f'[{req_id}] {req_text}...'
+                else f'[{requirement_category}] {req_text}...'
             ),
             'description': {
                 'type': 'doc',
@@ -112,7 +112,7 @@ def sync_entities_on_alm(
     uid, project_id, version, project_details, entity_name, entity_ids
 ):
     '''
-    Syncs Firestore testcases with Jira issues incrementally or fully.
+    Syncs Firestore testcases or requirements with Jira issues by using a highly selective JQL query based on the list of entity_ids.
     '''
     try:
         if entity_name not in ['testcases', 'requirements']:
@@ -121,86 +121,63 @@ def sync_entities_on_alm(
         cloud_id = project_details['toolSiteId']
         cloud_domain = project_details['toolSiteDomain']
 
-        if len(entity_ids) == 0:
+        if not entity_ids:
             return
 
-        if len(entity_ids) == 1:
-            jira_issues = jira_client.search_issues(
-                uid, cloud_domain, cloud_id, f'labels = \'{entity_ids[0]}\''
-            )
-        else:
-            if entity_name == 'requirements':
-                jql = 'labels in (\'Created_by_Captain\', \'Requirement\') AND labels = \'Created_by_Captain\' AND labels = \'Requirement\''
-            else:
-                jql = 'labels in (\'Created_by_Captain\', \'Testcase\') AND labels = \'Created_by_Captain\' AND labels = \'Testcase\''
+        quoted_ids = [f'\'{entity_id}\'' for entity_id in entity_ids]
+        id_list = ', '.join(quoted_ids)
 
-            jira_issues = jira_client.search_issues(uid, cloud_domain, cloud_id, jql)
+        jql = f'labels IN ({id_list})'
+
+        # type_label = 'Testcase' if entity_name == 'testcases' else 'Requirement'
+        # jql += f' AND labels = \'Created_by_Captain\' AND labels = \'{type_label}\''
+
+        jira_issues = jira_client.search_issues(uid, cloud_domain, cloud_id, jql)
 
         results = {}
+        updates_to_commit = []
 
-        if entity_name == 'testcases':
-            for tc_id in entity_ids:
-                match = next(
-                    (
-                        issue
-                        for issue in jira_issues
-                        if tc_id in issue.get('labels', [])
-                    ),
-                    None,
-                )
+        for entity_id in entity_ids:
+            match = next(
+                (
+                    issue
+                    for issue in jira_issues
+                    if entity_id in issue.get('labels', [])
+                ),
+                None,
+            )
 
-                if match:
-                    results[tc_id] = match['key']
+            if match:
+                results[entity_id] = match['key']
 
-                    db.update_testcase(
-                        project_id,
-                        version,
-                        tc_id,
-                        {
+                updates_to_commit.append(
+                    {
+                        'id': entity_id,
+                        'data': {
                             'toolIssueKey': match['key'],
                             'toolIssueLink': match['url'],
                             'toolCreated': 'SUCCESS',
                         },
-                    )
-                else:
-                    db.update_testcase(
-                        project_id, version, tc_id, {'toolCreated': 'FAILED'}
-                    )
-
-            return results
-        else:
-            for req_id in entity_ids:
-                match = next(
-                    (
-                        issue
-                        for issue in jira_issues
-                        if req_id in issue.get('labels', [])
-                    ),
-                    None,
+                    }
+                )
+            else:
+                updates_to_commit.append(
+                    {'id': entity_id, 'data': {'toolCreated': 'FAILED'}}
                 )
 
-                if match:
-                    results[req_id] = match['key']
+        if updates_to_commit:
+            db.commit_batch_updates(
+                project_id=project_id,
+                version_id=version,
+                collection_name=entity_name,
+                update_details=updates_to_commit,
+            )
 
-                    db.update_requirement(
-                        project_id,
-                        version,
-                        req_id,
-                        {
-                            'toolIssueKey': match['key'],
-                            'toolIssueLink': match['url'],
-                            'toolCreated': 'SUCCESS',
-                        },
-                    )
-                else:
-                    db.update_requirement(
-                        project_id, version, req_id, {'toolCreated': 'FAILED'}
-                    )
-
-            return results
+        return results
 
     except Exception as e:
         logger.exception(f'Error syncing {entity_name} to Jira: {e}')
+        return {}
 
 
 def get_req_issue_key(project_id, version, req_keys, testcase):
@@ -224,7 +201,9 @@ def get_req_issue_key(project_id, version, req_keys, testcase):
 def process_req_batch(
     batch, uid, cloud_id, alm_project_key, project_id, version, project_details
 ):
-    logger.info(f'Processing batch of {len(batch)} requirements: {[req.get('requirement_id', '') for req in batch]}')
+    logger.info(
+        f'Processing batch of {len(batch)} requirements: {[req.get('requirement_id', '') for req in batch]}'
+    )
 
     issue_payloads = [
         get_jira_requirement_payload(req, alm_project_key) for req in batch
@@ -348,12 +327,12 @@ def background_issue_creation_on_alm(uid, project_id, version):
             {'status': 'CREATE_ALM_NEW_REQUIREMENTS'},
         )
 
-        requirements = db.get_requirements(project_id, version, change_analysis_status='NEW')
+        requirements = db.get_requirements(
+            project_id, version, change_analysis_status='NEW'
+        )
 
         new_requirements = [
-            req
-            for req in requirements
-            if req.get('toolCreated', '') != 'SUCCESS'
+            req for req in requirements if req.get('toolCreated', '') != 'SUCCESS'
         ]
 
         batch_size = 40
@@ -390,11 +369,7 @@ def background_issue_creation_on_alm(uid, project_id, version):
 
         testcases = db.get_testcases(project_id, version, change_analysis_status='NEW')
 
-        new_testcases = [
-            tc
-            for tc in testcases
-            if tc.get('toolCreated') != 'SUCCESS'
-        ]
+        new_testcases = [tc for tc in testcases if tc.get('toolCreated') != 'SUCCESS']
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = [
@@ -407,7 +382,7 @@ def background_issue_creation_on_alm(uid, project_id, version):
                     project_id,
                     version,
                     project_details,
-                    req_keys
+                    req_keys,
                 )
                 for i in range(0, len(new_testcases), batch_size)
             ]
@@ -422,7 +397,8 @@ def background_issue_creation_on_alm(uid, project_id, version):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
-                executor.submit(update_deprecated_tc, tc, uid, cloud_id) for tc in dep_testcases
+                executor.submit(update_deprecated_tc, tc, uid, cloud_id)
+                for tc in dep_testcases
             ]
 
             concurrent.futures.wait(futures)

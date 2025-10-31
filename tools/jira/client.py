@@ -9,6 +9,12 @@ from gcp.firestore import FirestoreDB
 from gcp.secret_manager import SecretManager
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 JIRA_CLIENT_ID = os.getenv('JIRA_CLIENT_ID')
 JIRA_CLIENT_SECRET = os.getenv('JIRA_CLIENT_SECRET')

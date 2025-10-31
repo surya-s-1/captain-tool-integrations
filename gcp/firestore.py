@@ -282,6 +282,32 @@ class FirestoreDB:
         )
         doc_ref.update(update_details)
 
+    def commit_batch_updates(self, project_id, version_id, collection_name, update_details):
+        batch = self.db.batch()
+        count = 0
+
+        for each in update_details:
+            if count > 50:
+                batch.commit()
+                batch = self.db.batch()
+                count = 0
+
+            batch.update(
+                self.db.document(
+                    'projects',
+                    project_id,
+                    'versions',
+                    version_id,
+                    collection_name,
+                    each.get('id'),
+                ),
+                each.get('data')
+            )
+            count += 1
+
+        if count > 0:
+            batch.commit()
+
     # --- New Methods for Async Job Management ---
     def create_doc_download_job(
         self, uid: str, project_id: str, version: str, doc_name: str
