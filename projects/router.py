@@ -155,7 +155,7 @@ def get_connected_projects(user: Dict = Depends(get_current_user)):
 
 @router.get(
     '/{project_id}/details',
-    description='Gets the details of a project by project id including its lates version, tool (ex. Jira, Azure DevOps), siteId(Unique project id in the rool), siteDomain(Projects domain in the tool), etc.',
+    description='Gets the details of a project by project id including its latest version, tool (ex. Jira, Azure DevOps), siteId(Unique project id in the ALM tool), siteDomain (Projects domain in the ALM tool), etc.',
 )
 def get_project_details(user: Dict = Depends(get_current_user), project_id: str = None):
     if not project_id:
@@ -374,9 +374,9 @@ def mark_testcase_deleted(
 
 @router.post(
     '/{project_id}/v/{version}/requirements/explicit/confirm',
-    description='Confirm the extracted explicit requiremented',
+    description='Confirm the extracted explicit requirements and starts implicit requirements creation',
 )
-def confirm_change_analysis(
+def confirm_extracted_explicit_requirements(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
@@ -423,7 +423,7 @@ def confirm_change_analysis(
     '/{project_id}/v/{version}/requirements/all/confirm',
     description='Confirms the requirements for a project version and triggers the test case creation workflow.',
 )
-def confirm_requirements_and_trigger_testcase_creation(
+def confirm_all_requirements(
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
@@ -527,9 +527,9 @@ def update_testcase(
 
 @router.post(
     '/{project_id}/v/{version}/testcases/confirm',
-    description='Confirms test cases and initiates their creation in ALM tool as a background task.',
+    description='Confirms test cases and initiates requirements and testcases creation/updation in ALM tool as a background task.',
 )
-def confirm_create_testcases_on_tool(
+def confirm_testcases(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
@@ -556,9 +556,9 @@ def confirm_create_testcases_on_tool(
 
 @router.post(
     '/{project_id}/v/{version}/r/{requirement_id}/sync/one',
-    description='Syncs the testcases with the app.',
+    description='Syncs specified requirement ALM creation status with the app.',
 )
-def sync_testcases_on_tool(
+def sync_requirement_alm_status(
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
@@ -591,9 +591,9 @@ def sync_testcases_on_tool(
 
 @router.post(
     '/{project_id}/v/{version}/t/{testcase_id}/sync/one',
-    description='Syncs the testcase with the app.',
+    description='Syncs specified testcase ALM creation status with the app.',
 )
-def sync_testcases_on_tool(
+def sync_testcase_alm_status(
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
@@ -626,9 +626,9 @@ def sync_testcases_on_tool(
 
 @router.post(
     '/{project_id}/v/{version}/r/{requirement_id}/create/one',
-    description='Creates a specific requirement in ALM tool',
+    description='Creates specified requirement in ALM tool',
 )
-def create_testcase_on_tool(
+def create_requirement_on_alm_tool(
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
@@ -658,9 +658,9 @@ def create_testcase_on_tool(
 
 @router.post(
     '/{project_id}/v/{version}/t/{testcase_id}/create/one',
-    description='Creates a specific test case in ALM tool',
+    description='Creates specified test case in ALM tool',
 )
-def create_testcase_on_tool(
+def create_testcase_on_alm_tool(
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
@@ -744,9 +744,9 @@ def create_datasets_for_testcases(
 @router.post(
     '/download/uploadedDocument',
     status_code=status.HTTP_202_ACCEPTED,
-    description='Starts an asynchronous job to download and zip a specific uploaded document.',
+    description='Starts an asynchronous job to zip and download specified uploaded document.',
 )
-async def initiate_download_dataset_job_for_one_document(
+async def initiate_download_dataset_job_for_uploaded_document(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     project_id: str = Body(..., embed=True),
@@ -793,7 +793,7 @@ async def initiate_download_dataset_job_for_one_document(
 @router.post(
     '/download/one',
     status_code=status.HTTP_202_ACCEPTED,
-    description='Starts an asynchronous job to download and zip a specific testcase\'s dataset.',
+    description='Starts an asynchronous job to zip and download dataset of the specified testcase.',
 )
 async def initiate_download_dataset_job_for_one_testcase(
     background_tasks: BackgroundTasks,
@@ -841,7 +841,7 @@ async def initiate_download_dataset_job_for_one_testcase(
 @router.post(
     '/download/all',
     status_code=status.HTTP_202_ACCEPTED,
-    description='Starts an asynchronous job to download and zip datasets.',
+    description='Starts an asynchronous job to zip and download datasets of all testcases.',
 )
 async def initiate_download_dataset_job_for_all_testcases(
     background_tasks: BackgroundTasks,
@@ -993,7 +993,7 @@ async def get_requirements_filtered(
 
 @router.get(
     '/{project_id}/v/{version}/testcases/list',
-    description='Fetches testcases for a given project version, optionally filtered by source or regulation.',
+    description='Fetches testcases for a given project version and requirement ID.',
 )
 async def get_testcases_filtered(
     user: Dict = Depends(get_current_user),
@@ -1007,7 +1007,7 @@ async def get_testcases_filtered(
     if not project_id or not version or not requirement_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Project ID and version are required.',
+            detail='Project ID, version and requirement id are required.',
         )
 
     try:
@@ -1074,8 +1074,11 @@ async def create_new_version(
         )
 
 
-@router.post('/{project_id}/v/{version}/changeAnalysisStatus/update')
-def update_change_analysis_status(
+@router.post(
+    '/{project_id}/v/{version}/changeAnalysisStatus/update',
+    description='Updates the change analysis status of specified requirement.',
+)
+def update_requirement_change_analysis_status(
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
     project_id: str = None,
@@ -1118,9 +1121,9 @@ def update_change_analysis_status(
 
 @router.post(
     '/{project_id}/v/{version}/changeAnalysis/confirm',
-    description='Confirm the change analysis',
+    description='Confirm the change analysis of explicit requirements.',
 )
-def confirm_change_analysis(
+def confirm_explicit_requirements_change_analysis(
     background_tasks: BackgroundTasks,
     user: Dict = Depends(get_current_user),
     is_latest_version: bool = Depends(check_if_latest_project_version),
