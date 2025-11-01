@@ -154,6 +154,7 @@ class FirestoreDB:
         version_id,
         deleted=False,
         duplicate=False,
+        tool_created=None,
         change_analysis_status=None
     ):
         '''
@@ -168,6 +169,9 @@ class FirestoreDB:
 
         if not duplicate:
             collection_ref = collection_ref.where('duplicate', '==', False)
+        
+        if tool_created is not None:
+            collection_ref = collection_ref.where('toolCreated', '==', tool_created)
 
         if change_analysis_status is not None:
             collection_ref = collection_ref.where(

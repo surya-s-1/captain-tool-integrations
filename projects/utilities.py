@@ -271,7 +271,7 @@ def process_tc_batch(
         logger.exception(f'Error creating batch of test cases: {e}')
 
 
-def update_deprecated_tc(tc, uid, cloud_id):
+def update_one_testcase(tc, uid, cloud_id):
     try:
         jira_client.update_issue(
             uid,
@@ -286,6 +286,36 @@ def update_deprecated_tc(tc, uid, cloud_id):
     except Exception as e:
         logger.exception(f'Error updating deprecated testcase: {e}')
 
+
+def update_one_req(req, uid, cloud_id):
+    try:
+        req_text = req.get('requirement', '')
+        requirement_category = req.get('requirement_category', '')
+
+        title = f'[{requirement_category}] {req_text}'
+
+        jira_client.update_issue(
+            uid,
+            cloud_id,
+            req.get('toolIssueKey'),
+            {
+                'summary': f'{title[:200]}...' if len(title) > 200 else title,
+                'description': {
+                    'type': 'doc',
+                    'version': 1,
+                    'content': [
+                        {
+                            'type': 'paragraph',
+                            'content': [{'text': req_text, 'type': 'text'}],
+                        }
+                    ],
+                }
+            }
+        )
+
+        time.sleep(0.5)
+    except Exception as e:
+        logger.exception(f'Error updating deprecated testcase: {e}')
 
 def background_issue_creation_on_alm(uid, project_id, version):
     '''
@@ -362,6 +392,27 @@ def background_issue_creation_on_alm(uid, project_id, version):
         db.update_version(
             project_id,
             version,
+            {'status': 'UPDATE_ALM_MOD_REQUIREMENTS'},
+        )
+
+        modified_requirements = db.get_requirements(
+            project_id,
+            version,
+            tool_created='SUCCESS',
+            change_analysis_status='MODIFIED',
+        )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(update_one_req, req, uid, cloud_id)
+                for req in modified_requirements
+            ]
+
+            concurrent.futures.wait(futures)
+
+        db.update_version(
+            project_id,
+            version,
             {'status': 'CREATE_ALM_NEW_TESTCASES'},
         )
 
@@ -395,7 +446,7 @@ def background_issue_creation_on_alm(uid, project_id, version):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
-                executor.submit(update_deprecated_tc, tc, uid, cloud_id)
+                executor.submit(update_one_testcase, tc, uid, cloud_id)
                 for tc in dep_testcases
             ]
 
@@ -676,6 +727,7 @@ def background_zip_all_task(job_id: str, project_id: str, version: str):
     except Exception as e:
         logger.exception(f'Error in background zip task for job {job_id}: {e}')
         db.update_download_job_status(job_id, 'failed', error=str(e))
+
 
 def background_invoke_implicit_processing(project_id, version):
     try:
