@@ -39,7 +39,7 @@ def get_jira_requirement_payload(requirement, project_key):
     '''
 
     requirement_category = requirement.get('requirement_category', '')
-    req_text = requirement.get('requirement', '')
+    req_text = requirement.get('requirement', '').replace('\n', ' ')
 
     title = f'[{requirement_category}] {req_text}'
 
@@ -73,7 +73,7 @@ def get_jira_testcase_payload(testcase, req_issue_key, project_key):
     '''
     Maps internal testcase structure to a Jira issue payload.
     '''
-    title = testcase.get('title')
+    title = testcase.get('title', '').replace('\n', ' ')
     description_text = testcase.get('description', '')
     acceptance = testcase.get('acceptance_criteria')
     if acceptance:
